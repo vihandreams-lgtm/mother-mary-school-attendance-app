@@ -5,12 +5,12 @@ import { getFirestore } from "firebase/firestore";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDhX_b-7ClGSfRdCceqpwfCaclxF5ZwAp4",
-  authDomain: "mother-mary-primary-school.firebaseapp.com",
-  projectId: "mother-mary-primary-school",
-  storageBucket: "mother-mary-primary-school.firebasestorage.app",
-  messagingSenderId: "640859341985",
-  appId: "1:640859341985:web:86b0af77ddefa84a3d5ce0"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // Initialize Firebase

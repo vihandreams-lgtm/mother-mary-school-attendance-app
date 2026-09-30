@@ -85,7 +85,7 @@ function LoginForm() {
 function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [userRole, setUserRole] = useState(null);        // null | 'scanner_agent' | 'admin'
+  const [userRole, setUserRole] = useState(null);
   const [roleLoading, setRoleLoading] = useState(false);
 
   useEffect(() => {
@@ -178,30 +178,52 @@ function App() {
     };
   }, []);
 
+  // ============ FIXED: resetDailyIfNeeded ============
+  // Now protects students who already have an attendance record for today
+  // so that a re-run of the reset NEVER wipes their "Present" status.
   const resetDailyIfNeeded = async () => {
-    const eatDate = getEATDate();
-    const settingsRef = doc(db, 'settings', 'dailyReset');
-    const settingsSnap = await getDoc(settingsRef);
-    const lastResetDate = settingsSnap.exists() ? settingsSnap.data().lastResetDate : null;
+    try {
+      const eatDate = getEATDate();
+      const settingsRef = doc(db, 'settings', 'dailyReset');
+      const settingsSnap = await getDoc(settingsRef);
+      const lastResetDate = settingsSnap.exists() ? settingsSnap.data().lastResetDate : null;
 
-    if (lastResetDate !== eatDate) {
+      if (lastResetDate === eatDate) {
+        console.log('✓ Daily reset already done for', eatDate);
+        return;
+      }
+
+      console.log('⚠️ Running daily reset from', lastResetDate, 'to', eatDate);
+
       const allCols = ['pupils', 'teachers', 'nonTeaching'];
+      const updatePromises = [];
+
       for (const col of allCols) {
         const snapshot = await getDocs(collection(db, col));
-        snapshot.docs.forEach(async (docSnap) => {
+        snapshot.docs.forEach((docSnap) => {
           const data = docSnap.data();
-          if (data.category !== 'Administrator') {
-            await updateDoc(doc(db, col, docSnap.id), {
+          if (data.category === 'Administrator') return;
+
+          // CRITICAL: Never wipe anyone who already has an attendance record for today
+          if (data.attendanceHistory && data.attendanceHistory[eatDate]) return;
+
+          updatePromises.push(
+            updateDoc(doc(db, col, docSnap.id), {
               status: 'Absent',
               arrivalTime: '--',
               morningStatus: 'Absent',
               departureTime: '--',
               eveningStatus: 'Absent',
-            });
-          }
+            })
+          );
         });
       }
+
+      await Promise.all(updatePromises);
       await setDoc(settingsRef, { lastResetDate: eatDate }, { merge: true });
+      console.log('✓ Daily reset complete for', eatDate);
+    } catch (err) {
+      console.error('❌ Daily reset failed:', err);
     }
   };
 
@@ -376,6 +398,7 @@ function App() {
             [dateKey]: { arrivalTime: timeString, morningStatus, departureTime: '--', eveningStatus: 'On Campus' },
           },
         };
+        // ============ FIXED: tagged attendance record ============
         await addDoc(collection(db, 'attendance'), {
           name: person.name,
           category: person.category,
@@ -385,6 +408,9 @@ function App() {
           departureTime: '--',
           eveningStatus: 'On Campus',
           timestamp: now.toISOString(),
+          scannedBy: auth.currentUser?.uid || null,
+          scannedByName: auth.currentUser?.email || 'Unknown',
+          source: userRole === 'scanner_agent' ? 'duty_scanner' : 'admin_scanner',
         });
       } else if (person.status === 'Present' && person.eveningStatus !== 'Departed') {
         action = 'departure';
@@ -573,6 +599,7 @@ function App() {
 
       await updateDoc(docRef, updatedPerson);
 
+      // ============ FIXED: tagged attendance record ============
       await addDoc(collection(db, 'attendance'), {
         name: existing.name,
         category: existing.category,
@@ -582,6 +609,9 @@ function App() {
         departureTime: '--',
         eveningStatus: 'On Campus',
         timestamp: now.toISOString(),
+        scannedBy: auth.currentUser?.uid || null,
+        scannedByName: auth.currentUser?.email || 'Unknown',
+        source: userRole === 'scanner_agent' ? 'duty_scanner' : 'admin_scanner',
       });
 
       setManualEntryName('');

@@ -1,24 +1,59 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import { auth, db } from '../firebase';
-import { doc, getDoc, addDoc, collection } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  addDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+} from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
+
+// Get current date in East Africa Time (UTC+3) — matches App.jsx
+const getEATDate = () => {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
+};
+
+// localStorage key for the offline queue
+const QUEUE_KEY = 'mmps_duty_scan_queue';
+
+const loadQueue = () => {
+  try {
+    const raw = localStorage.getItem(QUEUE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveQueue = (q) => {
+  try {
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  } catch {
+    // ignore storage errors (private mode, etc.)
+  }
+};
 
 /**
  * DutyTeacherScanner
  * ------------------
- * A dedicated, battery-friendly attendance scanning interface for users
- * whose Firestore `users/{uid}` document has `role: "scanner_agent"`.
+ * A dedicated, battery-friendly attendance scanning interface for the
+ * Teacher On Duty.
  *
  * Features:
  *  - Verifies role against Firestore on mount
- *  - Manual camera pause/resume toggle (fully unmounts the video stream when paused)
- *  - Large touch targets for one-handed phone use
- *  - Optional onScan callback so App.jsx can handle Firestore writes
+ *  - Manual camera pause/resume toggle (unmounts the video stream when paused)
+ *  - Loads today's scans from Firestore on mount so refresh keeps the count
+ *  - SHARED scan count — shows ALL scans for the day (single shared account)
+ *  - OFFLINE QUEUE — failed scans are stored locally and auto-synced when back online
+ *  - Recent Scans shows only the most recent 5
  */
 export default function DutyTeacherScanner({
-  onScan,      // optional: (parsedQR, rawValue) => Promise<void>
-  onLogout,    // optional: called after sign-out
+  onScan,      // (parsedQR, rawValue) => Promise<void> — called to save a scan
+  onLogout,    // called after sign-out
 }) {
   const [authState, setAuthState] = useState('checking'); // 'checking' | 'authorized' | 'denied'
   const [profile, setProfile] = useState(null);
@@ -26,8 +61,17 @@ export default function DutyTeacherScanner({
   const [scanLog, setScanLog] = useState([]);
   const [statusMessage, setStatusMessage] = useState('');
   const [scanCount, setScanCount] = useState(0);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   const lastScanTimeRef = useRef({});
+  const onScanRef = useRef(onScan);
+
+  // Keep the latest onScan in a ref so the flush effect doesn't need to re-bind
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   // ---------- 1. Auth + Role Verification ----------
   useEffect(() => {
@@ -58,7 +102,97 @@ export default function DutyTeacherScanner({
     verifyRole();
   }, []);
 
-  // ---------- 2. Scan Handler ----------
+  // ---------- 2. Load ALL of today's scans from Firestore on mount ----------
+  // SHARED across all users of this account, so no per-user filter.
+  const reloadTodayScans = async () => {
+    setLoadingLogs(true);
+    try {
+      const today = getEATDate();
+      const q = query(
+        collection(db, 'attendance'),
+        where('date', '==', today)
+      );
+      const snap = await getDocs(q);
+      const records = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: data.name || 'Unknown',
+          category: data.category || 'Unknown',
+          time: data.arrivalTime || '--',
+          status: data.morningStatus || 'Present',
+          timestamp: data.timestamp || '',
+        };
+      });
+
+      // Newest first
+      records.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+
+      // Only keep the most recent 5 for display
+      setScanLog(records.slice(0, 5));
+      setScanCount(records.length);
+    } catch (err) {
+      console.error('Failed to load today scans:', err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authState !== 'authorized') return;
+    reloadTodayScans();
+    setPendingCount(loadQueue().length);
+  }, [authState]);
+
+  // ---------- 3. Online / Offline tracking + auto-flush ----------
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Flush queued scans whenever we come back online or on mount
+  useEffect(() => {
+    if (authState !== 'authorized') return;
+    if (!isOnline) return;
+
+    const flushQueue = async () => {
+      const q = loadQueue();
+      if (q.length === 0) return;
+      if (typeof onScanRef.current !== 'function') return;
+
+      const remaining = [];
+      let synced = 0;
+
+      for (const item of q) {
+        try {
+          await onScanRef.current(item.parsed, item.rawValue);
+          synced++;
+        } catch (err) {
+          console.error('Failed to sync queued scan:', err);
+          remaining.push(item);
+        }
+      }
+
+      saveQueue(remaining);
+      setPendingCount(remaining.length);
+
+      if (synced > 0) {
+        setStatusMessage(`✓ Synced ${synced} queued scan${synced > 1 ? 's' : ''} from offline.`);
+        // Refresh the log so the synced records show up properly
+        reloadTodayScans();
+      }
+    };
+
+    flushQueue();
+  }, [authState, isOnline]);
+
+  // ---------- 4. Scan Handler ----------
   const handleScan = async (result) => {
     if (!result || !result[0]?.rawValue) return;
     const rawValue = result[0].rawValue;
@@ -78,39 +212,60 @@ export default function DutyTeacherScanner({
 
     const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    setScanLog((prev) => [
-      {
-        name: parsed?.name || rawValue,
-        category: parsed?.type || 'Unknown',
-        time: timeString,
-      },
-      ...prev,
-    ].slice(0, 15));
-
+    // Add to the local display log immediately (most recent 5 only)
+    const localEntry = {
+      id: `local-${now}`,
+      name: parsed?.name || rawValue,
+      category: parsed?.type || 'Unknown',
+      time: timeString,
+      status: 'Present',
+    };
+    setScanLog((prev) => [localEntry, ...prev].slice(0, 5));
     setScanCount((c) => c + 1);
-    setStatusMessage(`✓ ${parsed?.name || 'Scan'} logged at ${timeString}`);
 
-    // Hand off to parent (App.jsx) for Firestore writes
-    if (typeof onScan === 'function') {
-      try {
-        await onScan(parsed, rawValue);
-      } catch (err) {
-        console.error('Parent onScan error:', err);
-        setStatusMessage(`⚠️ Failed to save ${parsed?.name || 'scan'}`);
+    // Try to save via the parent handler; on failure or offline, queue it
+    const queueItem = { parsed, rawValue, timestamp: new Date().toISOString() };
+
+    if (typeof onScanRef.current === 'function') {
+      if (!navigator.onLine) {
+        // Offline → queue
+        const q = loadQueue();
+        q.push(queueItem);
+        saveQueue(q);
+        setPendingCount(q.length);
+        setStatusMessage(`⏳ Offline — ${parsed?.name || 'scan'} queued for sync`);
+      } else {
+        try {
+          await onScanRef.current(parsed, rawValue);
+          setStatusMessage(`✓ ${parsed?.name || 'Scan'} logged at ${timeString}`);
+        } catch (err) {
+          console.error('Parent onScan error — queueing:', err);
+          const q = loadQueue();
+          q.push(queueItem);
+          saveQueue(q);
+          setPendingCount(q.length);
+          setStatusMessage(`⚠️ Saved locally — will retry when back online`);
+        }
       }
     } else {
       // Standalone fallback: log to a `dutyScans` collection
       try {
         await addDoc(collection(db, 'dutyScans'), {
           agentUid: auth.currentUser?.uid || null,
-          agentName: profile?.name || 'Duty Teacher',
+          agentName: profile?.name || 'Teacher On Duty',
           name: parsed?.name || rawValue,
           category: parsed?.type || 'Unknown',
           timestamp: new Date().toISOString(),
           time: timeString,
         });
+        setStatusMessage(`✓ ${parsed?.name || 'Scan'} logged at ${timeString}`);
       } catch (err) {
-        console.error('Fallback log error:', err);
+        console.error('Fallback log error — queueing:', err);
+        const q = loadQueue();
+        q.push(queueItem);
+        saveQueue(q);
+        setPendingCount(q.length);
+        setStatusMessage(`⚠️ Saved locally — will retry when back online`);
       }
     }
   };
@@ -133,19 +288,19 @@ export default function DutyTeacherScanner({
     });
   };
 
-  // ---------- 3. UI: Checking ----------
+  // ---------- UI: Checking ----------
   if (authState === 'checking') {
     return (
       <div style={styles.centerScreen}>
         <div style={styles.spinnerCard}>
           <div style={styles.loadingDot} />
-          <p style={styles.loadingText}>Verifying Duty Teacher credentials…</p>
+          <p style={styles.loadingText}>Verifying Teacher On Duty credentials…</p>
         </div>
       </div>
     );
   }
 
-  // ---------- 4. UI: Access Denied ----------
+  // ---------- UI: Access Denied ----------
   if (authState === 'denied') {
     return (
       <div style={styles.centerScreen}>
@@ -153,7 +308,7 @@ export default function DutyTeacherScanner({
           <h2 style={styles.deniedTitle}>⛔ Access Denied</h2>
           <p style={styles.deniedText}>
             Your account does not have the <strong>scanner_agent</strong> role.
-            Please contact the administrator to be assigned Duty Teacher permissions.
+            Please contact the administrator to be assigned Teacher On Duty permissions.
           </p>
           <button onClick={handleLogout} style={styles.dangerBtn}>Sign Out</button>
         </div>
@@ -161,28 +316,43 @@ export default function DutyTeacherScanner({
     );
   }
 
-  // ---------- 5. UI: Scanner Dashboard ----------
+  // ---------- UI: Scanner Dashboard ----------
   return (
     <div style={styles.pageWrapper}>
-      {/* Header */}
+      {/* Header — subtitle removed, only the title remains */}
       <div style={styles.header}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 28 }}>🎓</span>
-          <div>
-            <h1 style={styles.headerTitle}>Duty Teacher Scanner</h1>
-            <p style={styles.headerSub}>
-              {profile?.name || 'Duty Teacher'} • {auth.currentUser?.email}
-            </p>
-          </div>
+          <h1 style={styles.headerTitle}>Teacher On Duty</h1>
         </div>
         <button onClick={handleLogout} style={styles.logoutBtn}>Sign Out</button>
       </div>
+
+      {/* Connection + Pending Sync Banner */}
+      {(!isOnline || pendingCount > 0) && (
+        <div
+          style={{
+            padding: '10px 14px',
+            borderRadius: 10,
+            fontSize: 12,
+            fontWeight: 800,
+            textAlign: 'center',
+            background: !isOnline ? '#fef9c3' : '#dbeafe',
+            color: !isOnline ? '#854d0e' : '#1e40af',
+            border: `1px solid ${!isOnline ? '#fde68a' : '#bfdbfe'}`,
+          }}
+        >
+          {!isOnline
+            ? `📴 Offline — scans will sync automatically when you're back online${pendingCount > 0 ? ` (${pendingCount} queued)` : ''}`
+            : `⏳ Syncing ${pendingCount} queued scan${pendingCount > 1 ? 's' : ''}…`}
+        </div>
+      )}
 
       {/* Stats Strip */}
       <div style={styles.strip}>
         <div style={styles.stripItem}>
           <span style={styles.stripLabel}>Scans Today</span>
-          <span style={styles.stripValue}>{scanCount}</span>
+          <span style={styles.stripValue}>{loadingLogs ? '…' : scanCount}</span>
         </div>
         <div style={styles.stripItem}>
           <span style={styles.stripLabel}>Camera</span>
@@ -233,14 +403,16 @@ export default function DutyTeacherScanner({
         <div style={styles.statusBar}>{statusMessage}</div>
       )}
 
-      {/* Recent Scans */}
+      {/* Recent Scans — most recent 5 only */}
       <div style={styles.logPanel}>
         <h3 style={styles.logTitle}>Recent Scans</h3>
-        {scanLog.length === 0 ? (
+        {loadingLogs ? (
+          <p style={styles.logEmpty}>Loading today's scans…</p>
+        ) : scanLog.length === 0 ? (
           <p style={styles.logEmpty}>No scans yet.</p>
         ) : (
           scanLog.map((entry, idx) => (
-            <div key={idx} style={styles.logRow}>
+            <div key={entry.id || idx} style={styles.logRow}>
               <span style={styles.logName}>{entry.name}</span>
               <span style={styles.logCat}>{entry.category}</span>
               <span style={styles.logTime}>{entry.time}</span>

@@ -14,6 +14,7 @@ import {
   setDoc,
   getDocs,
 } from 'firebase/firestore';
+import DutyTeacherScanner from './components/DutyTeacherScanner';
 
 const useMediaQuery = (query) => {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
@@ -26,12 +27,10 @@ const useMediaQuery = (query) => {
   return matches;
 };
 
-// Get current date in East Africa Time (UTC+3)
 const getEATDate = () => {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
 };
 
-// Login component with password visibility toggle
 function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -53,160 +52,30 @@ function LoginForm() {
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      minHeight: '100vh',
-      background: '#cbd5e1',
-      fontFamily: 'Inter, system-ui, sans-serif',
-      padding: '20px',
-      boxSizing: 'border-box'
-    }}>
-      <div style={{
-        background: '#faf9f7',
-        borderRadius: '16px',
-        boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-        padding: '30px',
-        width: '100%',
-        maxWidth: '400px',
-        border: '1px solid #d1d5db',
-      }}>
-        <h2 style={{
-          margin: '0 0 8px 0',
-          fontSize: '20px',
-          fontWeight: '900',
-          color: '#111827',
-          textAlign: 'center'
-        }}>
-          Sign In
-        </h2>
-        <p style={{
-          margin: '0 0 24px 0',
-          fontSize: '13px',
-          color: '#4b5563',
-          textAlign: 'center'
-        }}>
-          Mother Mary Primary School Limited
-        </p>
-        {error && (
-          <div style={{
-            background: '#fee2e2',
-            color: '#991b1b',
-            padding: '10px',
-            borderRadius: '8px',
-            marginBottom: '16px',
-            fontSize: '13px',
-            fontWeight: '700'
-          }}>
-            {error}
-          </div>
-        )}
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#cbd5e1', fontFamily: 'Inter, system-ui, sans-serif', padding: '20px', boxSizing: 'border-box' }}>
+      <div style={{ background: '#faf9f7', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', padding: '30px', width: '100%', maxWidth: '400px', border: '1px solid #d1d5db' }}>
+        <h2 style={{ margin: '0 0 8px 0', fontSize: '20px', fontWeight: '900', color: '#111827', textAlign: 'center' }}>Sign In</h2>
+        <p style={{ margin: '0 0 24px 0', fontSize: '13px', color: '#4b5563', textAlign: 'center' }}>Mother Mary Primary School Limited</p>
+        {error && (<div style={{ background: '#fee2e2', color: '#991b1b', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', fontWeight: '700' }}>{error}</div>)}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
-            <label style={{
-              display: 'block',
-              fontSize: '13px',
-              fontWeight: '900',
-              color: '#4b5563',
-              marginBottom: '6px'
-            }}>
-              Email Address
-            </label>
-            <input
-              type="email"
-              placeholder="admin@school.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              style={{
-                width: '100%',
-                padding: '12px',
-                borderRadius: '10px',
-                border: '1px solid #d1d5db',
-                fontWeight: '700',
-                boxSizing: 'border-box',
-                background: '#f3f4f6'
-              }}
-            />
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Email Address</label>
+            <input type="email" placeholder="admin@school.com" value={email} onChange={(e) => setEmail(e.target.value)} required style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', boxSizing: 'border-box', background: '#f3f4f6' }} />
           </div>
           <div>
-            <label style={{
-              display: 'block',
-              fontSize: '13px',
-              fontWeight: '900',
-              color: '#4b5563',
-              marginBottom: '6px'
-            }}>
-              Password
-            </label>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Password</label>
             <div style={{ position: 'relative' }}>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                style={{
-                  width: '100%',
-                  padding: '12px 45px 12px 12px',
-                  borderRadius: '10px',
-                  border: '1px solid #d1d5db',
-                  fontWeight: '700',
-                  boxSizing: 'border-box',
-                  background: '#f3f4f6'
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                style={{
-                  position: 'absolute',
-                  right: '10px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-              >
+              <input type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required style={{ width: '100%', padding: '12px 45px 12px 12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', boxSizing: 'border-box', background: '#f3f4f6' }} />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label={showPassword ? 'Hide password' : 'Show password'}>
                 {showPassword ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                    <line x1="1" y1="1" x2="23" y2="23"></line>
-                  </svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
                 ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                    <circle cx="12" cy="12" r="3"></circle>
-                  </svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 )}
               </button>
             </div>
           </div>
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              padding: '14px',
-              background: '#991b1b',
-              color: 'white',
-              border: 'none',
-              borderRadius: '10px',
-              fontWeight: '900',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontSize: '14px',
-              opacity: loading ? 0.7 : 1,
-              transition: 'opacity 0.2s',
-            }}
-          >
-            {loading ? 'Signing In...' : 'Sign In'}
-          </button>
+          <button type="submit" disabled={loading} style={{ padding: '14px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '900', cursor: loading ? 'not-allowed' : 'pointer', fontSize: '14px', opacity: loading ? 0.7 : 1, transition: 'opacity 0.2s' }}>{loading ? 'Signing In...' : 'Sign In'}</button>
         </form>
       </div>
     </div>
@@ -216,6 +85,8 @@ function LoginForm() {
 function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [userRole, setUserRole] = useState(null);        // null | 'scanner_agent' | 'admin'
+  const [roleLoading, setRoleLoading] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -225,6 +96,31 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  // Fetch the user's role from Firestore `users/{uid}`
+  useEffect(() => {
+    if (!user) {
+      setUserRole(null);
+      setRoleLoading(false);
+      return;
+    }
+    setRoleLoading(true);
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        if (snap.exists()) {
+          setUserRole(snap.data().role || 'admin');
+        } else {
+          setUserRole('admin');
+        }
+      } catch (err) {
+        console.error('Role lookup failed:', err);
+        setUserRole('admin');
+      } finally {
+        setRoleLoading(false);
+      }
+    })();
+  }, [user]);
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -233,7 +129,6 @@ function App() {
     }
   };
 
-  // Firestore data states – removed admins
   const [pupils, setPupils] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [nonTeaching, setNonTeaching] = useState([]);
@@ -256,7 +151,33 @@ function App() {
     };
   }, []);
 
-  // Daily reset when app loads
+  const [financeFees, setFinanceFees] = useState([]);
+  const [financePayments, setFinancePayments] = useState([]);
+  const [financeClassFees, setFinanceClassFees] = useState([]);
+
+  useEffect(() => {
+    const unsubFees = onSnapshot(collection(db, 'fees'), (snapshot) => {
+      setFinanceFees(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.warn('Fees collection listener error:', error.message);
+    });
+    const unsubPayments = onSnapshot(collection(db, 'feePayments'), (snapshot) => {
+      setFinancePayments(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.warn('FeePayments collection listener error:', error.message);
+    });
+    const unsubClassFees = onSnapshot(collection(db, 'classFees'), (snapshot) => {
+      setFinanceClassFees(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.warn('ClassFees collection listener error:', error.message);
+    });
+    return () => {
+      unsubFees();
+      unsubPayments();
+      unsubClassFees();
+    };
+  }, []);
+
   const resetDailyIfNeeded = async () => {
     const eatDate = getEATDate();
     const settingsRef = doc(db, 'settings', 'dailyReset');
@@ -345,12 +266,24 @@ function App() {
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
 
-  // NEW STATE for Manual Attendance Entry modal
   const [manualModalOpen, setManualModalOpen] = useState(false);
   const [manualEntryName, setManualEntryName] = useState('');
   const [manualEntryStatus, setManualEntryStatus] = useState('');
   const [manualEntrySelectedPerson, setManualEntrySelectedPerson] = useState(null);
   const [manualSuggestions, setManualSuggestions] = useState([]);
+
+  const [financeYear, setFinanceYear] = useState('2026');
+  const [financeTerm, setFinanceTerm] = useState('Term 3');
+  const [financeSubTab, setFinanceSubTab] = useState('overview');
+  const [selectedFinanceClass, setSelectedFinanceClass] = useState('P.2');
+  const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
+  const [paymentStudentId, setPaymentStudentId] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [financeStudentSearch, setFinanceStudentSearch] = useState('');
+  const [financeYearOptions] = useState(['2024', '2025', '2026', '2027', '2028']);
+  const [financeTermOptions] = useState(['Term 1', 'Term 2', 'Term 3']);
+  const [paymentHistoryStudent, setPaymentHistoryStudent] = useState(null);
 
   useEffect(() => {
     const handleMouseMove = (e) => {
@@ -547,7 +480,6 @@ function App() {
     }
   };
 
-  // Existing manual mark present function
   const handleManualMarkPresent = async (personId, category, tag) => {
     const now = new Date();
     const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -577,7 +509,6 @@ function App() {
     }
   };
 
-  // NEW: Handle manual attendance entry from dashboard absent click
   const handleManualSubmit = async (e) => {
     e.preventDefault();
     if (!manualEntryName.trim() || !manualEntryStatus) {
@@ -663,7 +594,6 @@ function App() {
     }
   };
 
-  // Live search for manual modal
   const handleManualNameChange = (e) => {
     const value = e.target.value;
     setManualEntryName(value);
@@ -748,7 +678,6 @@ function App() {
   const presentNonTeaching = nonTeaching.filter((n) => n.status === 'Present').length;
   const absentNonTeaching = totalNonTeaching - presentNonTeaching;
 
-  // Detailed report for selected date
   const dailyReport = useMemo(() => {
     const allPersons = [...pupils, ...teachers, ...nonTeaching];
     return allPersons.map((person) => {
@@ -784,7 +713,6 @@ function App() {
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [pupils, teachers, nonTeaching, selectedDate, today]);
 
-  // Filter to only arrived individuals
   const arrivedReport = dailyReport.filter(row => row.morningStatus === 'Present' || row.morningStatus === 'Late');
 
   const totalRows = arrivedReport.length;
@@ -793,17 +721,68 @@ function App() {
   const endIndex = Math.min(startIndex + rowsPerPage, totalRows);
   const pageRows = arrivedReport.slice(startIndex, endIndex);
 
-  const handleExportCSV = () => {
-    const headers = ['Name', 'Category', 'Arrival Time', 'Morning Status', 'Departure Time', 'Evening Status'];
-    const csvRows = arrivedReport.map(row => [
-      row.name, row.category, row.arrivalTime, row.morningStatus, row.departureTime, row.eveningStatus
-    ]);
-    const csvContent = [headers, ...csvRows].map(e => e.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `attendance_${selectedDate}.csv`;
-    link.click();
+  const handleExportPDF = () => {
+    const printWindow = window.open('', '', 'width=900,height=700');
+    if (!printWindow) {
+      alert('Please allow pop-ups to download the PDF.');
+      return;
+    }
+    const tableRows = arrivedReport.map(row => `
+      <tr>
+        <td>${row.name || ''}</td>
+        <td>${row.category || ''}</td>
+        <td>${row.arrivalTime || ''}</td>
+        <td>${row.morningStatus || ''}</td>
+        <td>${row.departureTime || ''}</td>
+        <td>${row.eveningStatus || ''}</td>
+      </tr>
+    `).join('');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Attendance Report - ${selectedDate}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #111827; }
+            .header { text-align: center; border-bottom: 3px solid #991b1b; padding-bottom: 12px; margin-bottom: 20px; }
+            .header h1 { margin: 0; color: #991b1b; font-size: 20px; letter-spacing: 0.5px; }
+            .header p { margin: 4px 0 0 0; font-size: 13px; color: #4b5563; font-weight: 700; }
+            .header h2 { margin: 12px 0 4px 0; font-size: 16px; color: #111827; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th { background: #991b1b; color: white; padding: 10px; text-align: left; font-size: 13px; }
+            td { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; font-size: 13px; }
+            tr:nth-child(even) { background: #f9fafb; }
+            .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #6b7280; font-style: italic; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>MOTHER MARY PRIMARY SCHOOL LIMITED</h1>
+            <p>P.O. Box 115301 Wakiso</p>
+            <h2>Daily Attendance Report</h2>
+            <p>${formattedSelectedDate}</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Arrival Time</th>
+                <th>Morning Status</th>
+                <th>Departure Time</th>
+                <th>Evening Status</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+          <p class="footer">Generated on ${new Date().toLocaleString()} • Total Records: ${arrivedReport.length}</p>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 250);
   };
 
   const classPupils = pupils.filter((p) => p.class === selectedClassView);
@@ -910,7 +889,221 @@ function App() {
     setOpenDropdown(openDropdown === menu ? null : menu);
   };
 
-  if (authLoading) {
+  // ============ FINANCE HELPERS ============
+  const formatUGX = (amount) => {
+    const n = Number(amount) || 0;
+    return n.toLocaleString('en-UG');
+  };
+
+  const getClassDefaultFee = (cls) => {
+    const rec = financeClassFees.find(
+      (f) => f.class === cls && String(f.year) === String(financeYear) && f.term === financeTerm
+    );
+    return rec ? Number(rec.defaultAmount) || 0 : 0;
+  };
+
+  const getExpectedFee = (studentId) => {
+    const rec = financeFees.find(
+      (f) => f.studentId === studentId && String(f.year) === String(financeYear) && f.term === financeTerm
+    );
+    if (rec) return Number(rec.expectedAmount) || 0;
+    const student = pupilsForFinance.find((p) => p.id === studentId);
+    if (student && student.class) {
+      return getClassDefaultFee(student.class);
+    }
+    return 0;
+  };
+
+  const getClearedAmount = (studentId) => {
+    return financePayments
+      .filter(
+        (p) => p.studentId === studentId && String(p.year) === String(financeYear) && p.term === financeTerm
+      )
+      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  };
+
+  const getFeeStatus = (expected, cleared) => {
+    if (expected <= 0) return 'Not Set';
+    if (cleared >= expected) return 'Fully Paid';
+    if (cleared > 0) return 'Balance';
+    return 'Default';
+  };
+
+  const statusBadgeStyle = (status) => {
+    switch (status) {
+      case 'Fully Paid':
+        return { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' };
+      case 'Balance':
+        return { background: '#fef9c3', color: '#854d0e', border: '1px solid #fde68a' };
+      case 'Default':
+        return { background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' };
+      default:
+        return { background: '#e5e7eb', color: '#4b5563', border: '1px solid #cbd5e1' };
+    }
+  };
+
+  const pupilsForFinance = useMemo(() => {
+    return pupils
+      .filter((p) => p.category === 'Pupil' || p.class)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [pupils]);
+
+  const financeClassStudents = useMemo(() => {
+    return pupilsForFinance.filter((p) => p.class === selectedFinanceClass);
+  }, [pupilsForFinance, selectedFinanceClass]);
+
+  const filteredFinanceClassStudents = useMemo(() => {
+    if (!financeStudentSearch.trim()) return financeClassStudents;
+    const q = financeStudentSearch.toLowerCase();
+    return financeClassStudents.filter((s) => s.name.toLowerCase().includes(q));
+  }, [financeClassStudents, financeStudentSearch]);
+
+  const classFinanceSummary = (cls) => {
+    const list = pupilsForFinance.filter((p) => p.class === cls);
+    let expected = 0;
+    let cleared = 0;
+    list.forEach((s) => {
+      expected += getExpectedFee(s.id);
+      cleared += getClearedAmount(s.id);
+    });
+    return { expected, cleared, balance: Math.max(0, expected - cleared), count: list.length };
+  };
+
+  const globalFinanceSummary = useMemo(() => {
+    let expected = 0;
+    let cleared = 0;
+    pupilsForFinance.forEach((s) => {
+      expected += getExpectedFee(s.id);
+      cleared += getClearedAmount(s.id);
+    });
+    return { expected, cleared, balance: Math.max(0, expected - cleared) };
+  }, [pupilsForFinance, financeFees, financePayments, financeClassFees, financeYear, financeTerm]);
+
+  const selectedClassSummary = useMemo(() => {
+    return classFinanceSummary(selectedFinanceClass);
+  }, [pupilsForFinance, financeFees, financePayments, financeClassFees, financeYear, financeTerm, selectedFinanceClass]);
+
+  const handleSetExpectedFee = async (student) => {
+    const existing = financeFees.find(
+      (f) => f.studentId === student.id && String(f.year) === String(financeYear) && f.term === financeTerm
+    );
+    const current = existing ? Number(existing.expectedAmount) || 0 : getClassDefaultFee(student.class);
+    const input = window.prompt(
+      `Set expected fee for ${student.name}\n(${financeYear} • ${financeTerm}):`,
+      String(current)
+    );
+    if (input === null) return;
+    const amount = Number(input);
+    if (isNaN(amount) || amount < 0) {
+      alert('Please enter a valid amount.');
+      return;
+    }
+    try {
+      if (existing) {
+        await updateDoc(doc(db, 'fees', existing.id), { expectedAmount: amount });
+      } else {
+        await addDoc(collection(db, 'fees'), {
+          studentId: student.id,
+          studentName: student.name,
+          class: student.class,
+          year: financeYear,
+          term: financeTerm,
+          expectedAmount: amount,
+        });
+      }
+    } catch (err) {
+      console.error('Error setting fee:', err);
+      alert('Failed to save expected fee. Please try again.');
+    }
+  };
+
+  const handleSetClassFee = async (cls) => {
+    const existing = financeClassFees.find(
+      (f) => f.class === cls && String(f.year) === String(financeYear) && f.term === financeTerm
+    );
+    const current = existing ? Number(existing.defaultAmount) || 0 : 0;
+    const input = window.prompt(
+      `Set default school fees per child for ${cls}\n(${financeYear} • ${financeTerm}):\n\nAll students in this class without an individual fee override will use this amount.`,
+      String(current)
+    );
+    if (input === null) return;
+    const amount = Number(input);
+    if (isNaN(amount) || amount < 0) {
+      alert('Please enter a valid amount.');
+      return;
+    }
+    try {
+      if (existing) {
+        await updateDoc(doc(db, 'classFees', existing.id), { defaultAmount: amount });
+      } else {
+        await addDoc(collection(db, 'classFees'), {
+          class: cls,
+          year: financeYear,
+          term: financeTerm,
+          defaultAmount: amount,
+        });
+      }
+      alert(`Default fee for ${cls} set to UGX ${formatUGX(amount)} for ${financeYear} • ${financeTerm}.`);
+    } catch (err) {
+      console.error('Error setting class fee:', err);
+      alert('Failed to save class default fee. Please try again.');
+    }
+  };
+
+  const handleRecordPayment = async (e) => {
+    e.preventDefault();
+    if (!paymentStudentId) {
+      alert('Please select a student.');
+      return;
+    }
+    const student = pupilsForFinance.find((p) => p.id === paymentStudentId);
+    if (!student) {
+      alert('Student not found.');
+      return;
+    }
+    const amount = Number(paymentAmount);
+    if (!amount || amount <= 0) {
+      alert('Please enter a valid payment amount.');
+      return;
+    }
+
+    const now = new Date();
+    const receiptNo = `REC-${financeYear}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
+    const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+
+    try {
+      await addDoc(collection(db, 'feePayments'), {
+        studentId: student.id,
+        studentName: student.name,
+        class: student.class,
+        year: financeYear,
+        term: financeTerm,
+        amount: amount,
+        method: paymentMethod,
+        receiptNo,
+        timestamp: now.toISOString(),
+        date: dateStr,
+      });
+      setShowRecordPaymentModal(false);
+      setPaymentAmount('');
+      setPaymentStudentId('');
+      setPaymentMethod('Cash');
+    } catch (err) {
+      console.error('Payment error:', err);
+      alert('Failed to record payment. Please try again.');
+    }
+  };
+
+  const openPaymentHistory = (student) => {
+    const payments = financePayments
+      .filter(
+        (p) => p.studentId === student.id && String(p.year) === String(financeYear) && p.term === financeTerm
+      )
+      .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+    setPaymentHistoryStudent({ student, payments });
+  };
+
+  if (authLoading || (user && roleLoading)) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#e2e8f0' }}>
         <div style={{ fontSize: '24px', fontWeight: '900', color: '#991b1b' }}>Loading...</div>
@@ -920,6 +1113,21 @@ function App() {
 
   if (!user) {
     return <LoginForm />;
+  }
+
+  // ============ DUTY TEACHER ROUTE ============
+  // Users with role 'scanner_agent' get the locked-down scanner UI only.
+  if (userRole === 'scanner_agent') {
+    return (
+      <DutyTeacherScanner
+        onScan={async (parsed, rawValue) => {
+          await handleScan([{ rawValue }]);
+        }}
+        onLogout={() => {
+          // signOut() runs inside DutyTeacherScanner; onAuthStateChanged handles the rest
+        }}
+      />
+    );
   }
 
   const sidebarContent = (
@@ -952,7 +1160,6 @@ function App() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {/* General Overview */}
           <button
             onClick={() => { setActiveTab('dashboard'); setOpenDropdown(null); setMobileMenuOpen(false); }}
             className="sidebar-main-btn pop-card"
@@ -968,7 +1175,6 @@ function App() {
             📊 General Overview
           </button>
 
-          {/* Attendance Directory */}
           <div>
             <button
               onClick={() => toggleDropdown('attendance')}
@@ -993,19 +1199,17 @@ function App() {
             )}
           </div>
 
-          {/* Live QR Scanner */}
           <button onClick={() => { setActiveTab('scanner'); setOpenDropdown(null); setMobileMenuOpen(false); }} className="sidebar-main-btn pop-card" style={{ width: '100%', padding: '15px 18px', background: activeTab === 'scanner' ? '#f3f4f6' : '#d1d5db', border: activeTab === 'scanner' ? '2px solid #991b1b' : '1px solid #9ca3af', borderRadius: '12px', color: activeTab === 'scanner' ? '#991b1b' : '#1f2937', fontWeight: '900', cursor: 'pointer', fontSize: '14px', textAlign: 'left', transform: activeTab === 'scanner' ? 'translateX(4px)' : 'none' }}>📷 Live QR Scanner</button>
 
-          {/* Registration Hub */}
           <div>
             <button
               onClick={() => toggleDropdown('registration')}
               className="sidebar-main-btn pop-card"
               style={{
                 width: '100%', padding: '15px 18px',
-                background: activeTab === 'registration' ? '#f3f4f6' : '#d1d5db',
-                border: activeTab === 'registration' ? '2px solid #991b1b' : '1px solid #9ca3af',
-                borderRadius: '12px', color: activeTab === 'registration' ? '#991b1b' : '#1f2937',
+                background: activeTab === 'registration' || activeTab === 'ids' ? '#f3f4f6' : '#d1d5db',
+                border: activeTab === 'registration' || activeTab === 'ids' ? '2px solid #991b1b' : '1px solid #9ca3af',
+                borderRadius: '12px', color: activeTab === 'registration' || activeTab === 'ids' ? '#991b1b' : '#1f2937',
                 fontWeight: '900', cursor: 'pointer', fontSize: '14px',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               }}
@@ -1018,15 +1222,27 @@ function App() {
                 {['pupil', 'teacher', 'non-teaching'].map((type) => (
                   <button key={type} onClick={() => { setActiveTab('registration'); setRegType(type); setMobileMenuOpen(false); }} className="submenu-btn" style={{ padding: '11px 14px', background: regType === type && activeTab === 'registration' ? '#fee2e2' : '#e5e7eb', border: regType === type && activeTab === 'registration' ? '1px solid #fecaca' : '1px solid #9ca3af', borderRadius: '9px', fontSize: '13px', fontWeight: '900', color: regType === type && activeTab === 'registration' ? '#991b1b' : '#1f2937', cursor: 'pointer', textAlign: 'left' }}>+ Register {formatRegType(type)}</button>
                 ))}
+                <button onClick={() => { setActiveTab('ids'); setMobileMenuOpen(false); }} className="submenu-btn" style={{ padding: '11px 14px', background: activeTab === 'ids' ? '#fee2e2' : '#e5e7eb', border: activeTab === 'ids' ? '1px solid #fecaca' : '1px solid #9ca3af', borderRadius: '9px', fontSize: '13px', fontWeight: '900', color: activeTab === 'ids' ? '#991b1b' : '#1f2937', cursor: 'pointer', textAlign: 'left' }}>🖨️ QR Badges & IDs</button>
               </div>
             )}
           </div>
 
-          {/* QR Badges & IDs */}
-          <button onClick={() => { setActiveTab('ids'); setOpenDropdown(null); setMobileMenuOpen(false); }} className="sidebar-main-btn pop-card" style={{ width: '100%', padding: '15px 18px', background: activeTab === 'ids' ? '#f3f4f6' : '#d1d5db', border: activeTab === 'ids' ? '2px solid #991b1b' : '1px solid #9ca3af', borderRadius: '12px', color: activeTab === 'ids' ? '#991b1b' : '#1f2937', fontWeight: '900', cursor: 'pointer', fontSize: '14px', textAlign: 'left', transform: activeTab === 'ids' ? 'translateX(4px)' : 'none' }}>🖨️ QR Badges & IDs</button>
-
-          {/* Calendar Settings */}
           <button onClick={() => { setActiveTab('calendar'); setOpenDropdown(null); setMobileMenuOpen(false); }} className="sidebar-main-btn pop-card" style={{ width: '100%', padding: '15px 18px', background: activeTab === 'calendar' ? '#f3f4f6' : '#d1d5db', border: activeTab === 'calendar' ? '2px solid #991b1b' : '1px solid #9ca3af', borderRadius: '12px', color: activeTab === 'calendar' ? '#991b1b' : '#1f2937', fontWeight: '900', cursor: 'pointer', fontSize: '14px', textAlign: 'left', transform: activeTab === 'calendar' ? 'translateX(4px)' : 'none' }}>🗓️ Calendar Settings</button>
+
+          <button
+            onClick={() => { setActiveTab('finance'); setOpenDropdown(null); setMobileMenuOpen(false); }}
+            className="sidebar-main-btn pop-card"
+            style={{
+              width: '100%', padding: '15px 18px',
+              background: activeTab === 'finance' ? '#f3f4f6' : '#d1d5db',
+              border: activeTab === 'finance' ? '2px solid #991b1b' : '1px solid #9ca3af',
+              borderRadius: '12px', color: activeTab === 'finance' ? '#991b1b' : '#1f2937',
+              fontWeight: '900', cursor: 'pointer', fontSize: '14px', textAlign: 'left',
+              transform: activeTab === 'finance' ? 'translateX(4px)' : 'none',
+            }}
+          >
+            💰 Finance
+          </button>
         </div>
       </div>
 
@@ -1047,7 +1263,6 @@ function App() {
     </aside>
   );
 
-  // Refined nested-box card styles (with soft warm off-white and improved inner box contrast)
   const cardContainerStyle = {
     background: '#faf9f7',
     borderRadius: '16px',
@@ -1092,6 +1307,15 @@ function App() {
     border: '1px solid #fecaca',
   };
 
+  const sectionHeaderStyle = {
+    background: '#faf9f7',
+    padding: isMobile ? '16px' : '22px 26px',
+    borderRadius: '16px',
+    border: '1px solid #d1d5db',
+    boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
+    marginBottom: '24px',
+  };
+
   return (
     <div style={{ width: '100%', minHeight: '100vh', background: '#cbd5e1', fontFamily: 'Inter, system-ui, sans-serif', color: '#111827', display: 'flex', boxSizing: 'border-box', overflowX: 'hidden' }}>
       <style>{`
@@ -1116,6 +1340,8 @@ function App() {
         input, select, textarea { border: 1px solid #9ca3af; background: #e5e7eb; }
         button { border: 1px solid #d1d5db; }
         .mobile-menu-btn { display: none; }
+        .finance-subtab { transition: all 0.2s ease; }
+        .finance-subtab:hover { background-color: #fee2e2 !important; border-color: #991b1b !important; color: #991b1b !important; }
         @media (max-width: 768px) {
           .mobile-menu-btn { display: block; }
           .resizer { display: none; }
@@ -1138,7 +1364,7 @@ function App() {
             {isMobile && (
               <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} style={{ background: 'transparent', border: '1px solid white', color: 'white', fontSize: '24px', cursor: 'pointer', padding: '4px 10px', borderRadius: '6px' }}>☰</button>
             )}
-            <h1 style={{ margin: 0, fontSize: isMobile ? '18px' : '22px', fontWeight: '900' }}>School Attendance Management System</h1>
+            <h1 style={{ margin: 0, fontSize: isMobile ? '18px' : '22px', fontWeight: '900' }}>School Management System</h1>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '13px', fontWeight: '700', opacity: 0.9 }}>Select Date:</span>
@@ -1151,14 +1377,12 @@ function App() {
           {/* DASHBOARD TAB */}
           {activeTab === 'dashboard' && (
             <div>
-              <div style={{ marginBottom: '24px' }}>
+              <div style={sectionHeaderStyle}>
                 <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#111827', margin: 0 }}>Attendance Overview</h2>
                 <p style={{ fontSize: '13px', color: '#4b5563', fontWeight: '700', margin: '4px 0 0 0' }}>{formattedSelectedDate}</p>
               </div>
 
-              {/* Horizontal summary cards - refined nested boxes */}
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                {/* Pupils Card */}
                 <div className="pop-card" style={cardContainerStyle}>
                   <div style={cardTopAccentStyle}></div>
                   <p style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#991b1b' }}>Pupils</p>
@@ -1178,7 +1402,6 @@ function App() {
                   </div>
                 </div>
 
-                {/* Teachers Card */}
                 <div className="pop-card" style={cardContainerStyle}>
                   <div style={cardTopAccentStyle}></div>
                   <p style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#991b1b' }}>Teaching Staff</p>
@@ -1198,7 +1421,6 @@ function App() {
                   </div>
                 </div>
 
-                {/* Non-Teaching Card */}
                 <div className="pop-card" style={cardContainerStyle}>
                   <div style={cardTopAccentStyle}></div>
                   <p style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#991b1b' }}>Non-Teaching Staff</p>
@@ -1219,29 +1441,10 @@ function App() {
                 </div>
               </div>
 
-              {/* Export button */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-                <button
-                  onClick={handleExportCSV}
-                  style={{
-                    padding: '8px 16px',
-                    background: '#991b1b',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontWeight: '900',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                  }}
-                >
-                  ⬇ Export CSV
-                </button>
+                <button onClick={handleExportPDF} style={{ padding: '8px 16px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>📄 Export / Download as PDF</button>
               </div>
 
-              {/* Detailed Report Table - only arrived individuals */}
               <div className="pop-card" style={{ background: '#e5e7eb', borderRadius: '12px', border: '1px solid #d1d5db', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '600px' }}>
                   <thead>
@@ -1257,9 +1460,7 @@ function App() {
                   <tbody>
                     {pageRows.length === 0 ? (
                       <tr>
-                        <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: '#4b5563', fontWeight: '700' }}>
-                          No arrivals recorded for this date.
-                        </td>
+                        <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: '#4b5563', fontWeight: '700' }}>No arrivals recorded for this date.</td>
                       </tr>
                     ) : (
                       pageRows.map((row, idx) => (
@@ -1268,29 +1469,11 @@ function App() {
                           <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{row.category}</td>
                           <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{row.arrivalTime}</td>
                           <td style={{ padding: '12px 16px' }}>
-                            <span style={{
-                              padding: '4px 8px',
-                              borderRadius: '6px',
-                              fontSize: '12px',
-                              fontWeight: '900',
-                              background: row.morningStatus === 'Present' ? '#dcfce7' : row.morningStatus === 'Late' ? '#fef9c3' : '#fee2e2',
-                              color: row.morningStatus === 'Present' ? '#166534' : row.morningStatus === 'Late' ? '#854d0e' : '#991b1b',
-                            }}>
-                              {row.morningStatus}
-                            </span>
+                            <span style={{ padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: '900', background: row.morningStatus === 'Present' ? '#dcfce7' : row.morningStatus === 'Late' ? '#fef9c3' : '#fee2e2', color: row.morningStatus === 'Present' ? '#166534' : row.morningStatus === 'Late' ? '#854d0e' : '#991b1b' }}>{row.morningStatus}</span>
                           </td>
                           <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{row.departureTime}</td>
                           <td style={{ padding: '12px 16px' }}>
-                            <span style={{
-                              padding: '4px 8px',
-                              borderRadius: '6px',
-                              fontSize: '12px',
-                              fontWeight: '900',
-                              background: row.eveningStatus === 'Departed' ? '#e0f2fe' : row.eveningStatus === 'On Campus' ? '#fef9c3' : '#f1f5f9',
-                              color: row.eveningStatus === 'Departed' ? '#0369a1' : row.eveningStatus === 'On Campus' ? '#854d0e' : '#4b5563',
-                            }}>
-                              {row.eveningStatus}
-                            </span>
+                            <span style={{ padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: '900', background: row.eveningStatus === 'Departed' ? '#e0f2fe' : row.eveningStatus === 'On Campus' ? '#fef9c3' : '#f1f5f9', color: row.eveningStatus === 'Departed' ? '#0369a1' : row.eveningStatus === 'On Campus' ? '#854d0e' : '#4b5563' }}>{row.eveningStatus}</span>
                           </td>
                         </tr>
                       ))
@@ -1299,45 +1482,219 @@ function App() {
                 </table>
               </div>
 
-              {/* Pagination controls */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '16px', flexWrap: 'wrap', gap: '8px' }}>
-                <p style={{ margin: 0, fontSize: '13px', color: '#4b5563', fontWeight: '700' }}>
-                  {startIndex + 1} - {endIndex} of {totalRows}
-                </p>
+                <p style={{ margin: 0, fontSize: '13px', color: '#4b5563', fontWeight: '700' }}>{startIndex + 1} - {endIndex} of {totalRows}</p>
                 <div style={{ display: 'flex', gap: '6px' }}>
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #d1d5db', background: currentPage === 1 ? '#e5e7eb' : '#f3f4f6', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: '700' }}
-                  >
-                    ‹ Prev
-                  </button>
+                  <button onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #d1d5db', background: currentPage === 1 ? '#e5e7eb' : '#f3f4f6', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontWeight: '700' }}>‹ Prev</button>
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page)}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '6px',
-                        border: '1px solid #d1d5db',
-                        background: page === currentPage ? '#991b1b' : '#f3f4f6',
-                        color: page === currentPage ? 'white' : '#1f2937',
-                        cursor: 'pointer',
-                        fontWeight: '700',
-                      }}
-                    >
-                      {page}
-                    </button>
+                    <button key={page} onClick={() => setCurrentPage(page)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #d1d5db', background: page === currentPage ? '#991b1b' : '#f3f4f6', color: page === currentPage ? 'white' : '#1f2937', cursor: 'pointer', fontWeight: '700' }}>{page}</button>
                   ))}
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages}
-                    style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #d1d5db', background: currentPage === totalPages ? '#e5e7eb' : '#f3f4f6', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontWeight: '700' }}
-                  >
-                    Next ›
-                  </button>
+                  <button onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage === totalPages} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #d1d5db', background: currentPage === totalPages ? '#e5e7eb' : '#f3f4f6', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontWeight: '700' }}>Next ›</button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ==================== FINANCE TAB ==================== */}
+          {activeTab === 'finance' && (
+            <div className="animated-pane">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <input
+                    list="finance-year-options"
+                    value={financeYear}
+                    onChange={(e) => setFinanceYear(e.target.value)}
+                    placeholder="Year"
+                    style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #9ca3af', fontWeight: '700', background: '#f3f4f6', width: '120px' }}
+                  />
+                  <datalist id="finance-year-options">
+                    {financeYearOptions.map((y) => <option key={y} value={y} />)}
+                  </datalist>
+                  <select value={financeTerm} onChange={(e) => setFinanceTerm(e.target.value)} style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #9ca3af', fontWeight: '700', background: '#f3f4f6' }}>
+                    {financeTermOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => setFinanceSubTab('overview')}
+                  className="finance-subtab"
+                  style={{
+                    padding: '14px 24px',
+                    background: financeSubTab === 'overview' ? '#991b1b' : '#f3f4f6',
+                    color: financeSubTab === 'overview' ? '#ffffff' : '#1f2937',
+                    border: financeSubTab === 'overview' ? '2px solid #7f1d1d' : '1px solid #9ca3af',
+                    borderRadius: '12px',
+                    fontWeight: '900',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  📊 General Overview
+                </button>
+                <button
+                  onClick={() => setFinanceSubTab('classes')}
+                  className="finance-subtab"
+                  style={{
+                    padding: '14px 24px',
+                    background: financeSubTab === 'classes' ? '#991b1b' : '#f3f4f6',
+                    color: financeSubTab === 'classes' ? '#ffffff' : '#1f2937',
+                    border: financeSubTab === 'classes' ? '2px solid #7f1d1d' : '1px solid #9ca3af',
+                    borderRadius: '12px',
+                    fontWeight: '900',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  🏫 Individual Classes
+                </button>
+              </div>
+
+              {financeSubTab === 'overview' && (
+                <div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '20px', marginBottom: '28px' }}>
+                    <div className="pop-card" style={cardContainerStyle}>
+                      <div style={cardTopAccentStyle}></div>
+                      <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#991b1b' }}>TOTAL EXPECTED</p>
+                      <h3 style={{ margin: '6px 0 0 0', fontSize: '24px', fontWeight: '900', color: '#111827' }}>UGX {formatUGX(globalFinanceSummary.expected)}</h3>
+                    </div>
+                    <div className="pop-card" style={cardContainerStyle}>
+                      <div style={cardTopAccentStyle}></div>
+                      <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#991b1b' }}>TOTAL CLEARED</p>
+                      <h3 style={{ margin: '6px 0 0 0', fontSize: '24px', fontWeight: '900', color: '#16a34a' }}>UGX {formatUGX(globalFinanceSummary.cleared)}</h3>
+                    </div>
+                    <div className="pop-card" style={cardContainerStyle}>
+                      <div style={cardTopAccentStyle}></div>
+                      <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#991b1b' }}>TOTAL BALANCE</p>
+                      <h3 style={{ margin: '6px 0 0 0', fontSize: '24px', fontWeight: '900', color: '#dc2626' }}>UGX {formatUGX(globalFinanceSummary.balance)}</h3>
+                    </div>
+                  </div>
+
+                  <div className="pop-card" style={{ background: '#e5e7eb', borderRadius: '12px', border: '1px solid #d1d5db', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '600px' }}>
+                      <thead>
+                        <tr style={{ background: '#991b1b', color: 'white' }}>
+                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Class Name</th>
+                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Students</th>
+                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Total Expected (UGX)</th>
+                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Total Cleared (UGX)</th>
+                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Balance (UGX)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {schoolClasses.map((cls, idx) => {
+                          const s = classFinanceSummary(cls);
+                          return (
+                            <tr key={cls} style={{ borderBottom: '1px solid #d1d5db', background: idx % 2 === 0 ? '#f3f4f6' : '#e5e7eb' }}>
+                              <td style={{ padding: '12px 16px', fontWeight: '900', color: '#111827' }}>{cls}</td>
+                              <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{s.count}</td>
+                              <td style={{ padding: '12px 16px', fontWeight: '700', color: '#111827' }}>{formatUGX(s.expected)}</td>
+                              <td style={{ padding: '12px 16px', fontWeight: '700', color: '#16a34a' }}>{formatUGX(s.cleared)}</td>
+                              <td style={{ padding: '12px 16px', fontWeight: '900', color: s.balance > 0 ? '#dc2626' : '#16a34a' }}>{formatUGX(s.balance)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {financeSubTab === 'classes' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                    <h3 style={{ fontSize: '14px', fontWeight: '900', color: '#4b5563', margin: 0 }}>Select Class:</h3>
+                    <button
+                      onClick={() => handleSetClassFee(selectedFinanceClass)}
+                      style={{ padding: '10px 16px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '900', cursor: 'pointer', fontSize: '12px' }}
+                    >
+                      ⚙️ Set Default Fee for {selectedFinanceClass}
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '24px' }}>
+                    {schoolClasses.map((cls) => {
+                      const isActive = selectedFinanceClass === cls;
+                      return (
+                        <button key={cls} onClick={() => setSelectedFinanceClass(cls)} className="pop-card" style={{ padding: '10px 18px', background: isActive ? '#991b1b' : '#f3f4f6', color: isActive ? '#ffffff' : '#1f2937', border: isActive ? '2px solid #7f1d1d' : '1px solid #d1d5db', borderRadius: '12px', fontWeight: '900', fontSize: '13px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>{cls}</button>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
+                    <div className="pop-card" style={cardContainerStyle}>
+                      <div style={cardTopAccentStyle}></div>
+                      <p style={{ margin: 0, fontSize: '12px', fontWeight: '900', color: '#991b1b' }}>EXPECTED ({selectedFinanceClass.toUpperCase()})</p>
+                      <h3 style={{ margin: '6px 0 0 0', fontSize: '22px', fontWeight: '900', color: '#111827' }}>UGX {formatUGX(selectedClassSummary.expected)}</h3>
+                    </div>
+                    <div className="pop-card" style={cardContainerStyle}>
+                      <div style={cardTopAccentStyle}></div>
+                      <p style={{ margin: 0, fontSize: '12px', fontWeight: '900', color: '#991b1b' }}>CLEARED ({selectedFinanceClass.toUpperCase()})</p>
+                      <h3 style={{ margin: '6px 0 0 0', fontSize: '22px', fontWeight: '900', color: '#16a34a' }}>UGX {formatUGX(selectedClassSummary.cleared)}</h3>
+                    </div>
+                    <div className="pop-card" style={cardContainerStyle}>
+                      <div style={cardTopAccentStyle}></div>
+                      <p style={{ margin: 0, fontSize: '12px', fontWeight: '900', color: '#991b1b' }}>BALANCE ({selectedFinanceClass.toUpperCase()})</p>
+                      <h3 style={{ margin: '6px 0 0 0', fontSize: '22px', fontWeight: '900', color: '#dc2626' }}>UGX {formatUGX(selectedClassSummary.balance)}</h3>
+                    </div>
+                  </div>
+
+                  <div style={{ position: 'relative', marginBottom: '20px' }}>
+                    <span style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px' }}>🔍</span>
+                    <input type="text" placeholder={`Search student in ${selectedFinanceClass}...`} value={financeStudentSearch} onChange={(e) => setFinanceStudentSearch(e.target.value)} style={{ width: '100%', padding: '14px 14px 14px 48px', borderRadius: '12px', border: '1px solid #d1d5db', background: '#f3f4f6', fontSize: '14px', fontWeight: '700', outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+
+                  <div className="pop-card" style={{ background: '#e5e7eb', borderRadius: '12px', border: '1px solid #d1d5db', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '900px' }}>
+                      <thead>
+                        <tr style={{ background: '#991b1b', color: 'white' }}>
+                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Student Name</th>
+                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Expected Amount</th>
+                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Total Cleared</th>
+                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Balance</th>
+                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Status</th>
+                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredFinanceClassStudents.length === 0 ? (
+                          <tr><td colSpan="6" style={{ padding: '30px', textAlign: 'center', color: '#4b5563', fontWeight: '700' }}>No students found in {selectedFinanceClass}.</td></tr>
+                        ) : (
+                          filteredFinanceClassStudents.map((student, idx) => {
+                            const expected = getExpectedFee(student.id);
+                            const cleared = getClearedAmount(student.id);
+                            const balance = Math.max(0, expected - cleared);
+                            const status = getFeeStatus(expected, cleared);
+                            const badge = statusBadgeStyle(status);
+                            return (
+                              <tr key={student.id} style={{ borderBottom: '1px solid #d1d5db', background: idx % 2 === 0 ? '#f3f4f6' : '#e5e7eb' }}>
+                                <td style={{ padding: '12px 16px', fontWeight: '900', color: '#111827' }}>{student.name}</td>
+                                <td style={{ padding: '12px 16px', fontWeight: '700', color: '#111827' }}>
+                                  {formatUGX(expected)}
+                                  <button onClick={() => handleSetExpectedFee(student)} title="Set individual expected fee" style={{ marginLeft: '8px', padding: '2px 6px', background: '#f3f4f6', border: '1px solid #9ca3af', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '900', color: '#4b5563' }}>✎</button>
+                                </td>
+                                <td style={{ padding: '12px 16px', fontWeight: '700', color: '#16a34a' }}>{formatUGX(cleared)}</td>
+                                <td style={{ padding: '12px 16px', fontWeight: '900', color: balance > 0 ? '#dc2626' : '#16a34a' }}>{formatUGX(balance)}</td>
+                                <td style={{ padding: '12px 16px' }}>
+                                  <span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '900', display: 'inline-block', ...badge }}>{status}</span>
+                                </td>
+                                <td style={{ padding: '12px 16px' }}>
+                                  <button onClick={() => { setPaymentStudentId(student.id); setShowRecordPaymentModal(true); }} style={{ padding: '6px 12px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '12px', marginRight: '6px' }}>💰 Add Payment</button>
+                                  <button onClick={() => openPaymentHistory(student)} style={{ padding: '6px 12px', background: '#f3f4f6', color: '#991b1b', border: '1px solid #991b1b', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '12px' }}>📜 History</button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1382,7 +1739,7 @@ function App() {
           {/* CLASS METRICS TAB */}
           {activeTab === 'classes' && (
             <div className="animated-pane" style={{ background: '#e5e7eb', padding: isMobile ? '16px' : '32px', borderRadius: '20px', border: '1px solid #d1d5db', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-              <div style={{ marginBottom: '24px' }}>
+              <div style={sectionHeaderStyle}>
                 <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#111827', margin: '0 0 6px 0' }}>Pupil Attendance ({selectedClassView})</h2>
                 <p style={{ fontSize: '13px', color: '#4b5563', fontWeight: '700', margin: '0 0 4px 0' }}>{formattedSelectedDate}</p>
                 <p style={{ fontSize: '13px', color: '#4b5563', fontWeight: '700', margin: 0 }}>Select a class below to view scan-in/scan-out metrics and logs</p>
@@ -1397,7 +1754,6 @@ function App() {
                 })}
               </div>
 
-              {/* Apply refined nested-box style to summary cards in Pupil Attendance */}
               <div className="summary-cards-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '28px' }}>
                 <div onClick={() => setClassFilterStatus('all')} className="pop-card" style={cardContainerStyle}>
                   <div style={cardTopAccentStyle}></div>
@@ -1463,11 +1819,12 @@ function App() {
           {/* STAFF ATTENDANCE LOGS TAB */}
           {activeTab === 'teacher-logs' && (
             <div className="animated-pane">
-              {/* Teaching Staff */}
               <div style={{ background: '#e5e7eb', padding: isMobile ? '16px' : '32px', borderRadius: '20px', border: '1px solid #d1d5db', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#111827', margin: '0 0 6px 0' }}>Teaching Staff Attendance</h2>
-                <p style={{ fontSize: '13px', color: '#4b5563', fontWeight: '700', margin: '0 0 4px 0' }}>{formattedSelectedDate}</p>
-                <p style={{ fontSize: '13px', color: '#4b5563', fontWeight: '700', margin: '0 0 24px 0' }}>Real-time scan-in/scan-out tracking for teachers</p>
+                <div style={sectionHeaderStyle}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#111827', margin: '0 0 6px 0' }}>Teaching Staff Attendance</h2>
+                  <p style={{ fontSize: '13px', color: '#4b5563', fontWeight: '700', margin: '0 0 4px 0' }}>{formattedSelectedDate}</p>
+                  <p style={{ fontSize: '13px', color: '#4b5563', fontWeight: '700', margin: 0 }}>Real-time scan-in/scan-out tracking for teachers</p>
+                </div>
                 <div className="summary-cards-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '28px' }}>
                   <div onClick={() => setTeacherFilterStatus('all')} className="pop-card" style={cardContainerStyle}>
                     <div style={cardTopAccentStyle}></div>
@@ -1510,11 +1867,12 @@ function App() {
                 </div>
               </div>
 
-              {/* Non-Teaching Staff */}
               <div style={{ background: '#e5e7eb', padding: isMobile ? '16px' : '32px', borderRadius: '20px', border: '1px solid #d1d5db', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#111827', margin: '0 0 6px 0' }}>Non-Teaching Staff Attendance</h2>
-                <p style={{ fontSize: '13px', color: '#4b5563', fontWeight: '700', margin: '0 0 4px 0' }}>{formattedSelectedDate}</p>
-                <p style={{ fontSize: '13px', color: '#4b5563', fontWeight: '700', margin: '0 0 24px 0' }}>Real-time scan-in/scan-out tracking for support staff</p>
+                <div style={sectionHeaderStyle}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#111827', margin: '0 0 6px 0' }}>Non-Teaching Staff Attendance</h2>
+                  <p style={{ fontSize: '13px', color: '#4b5563', fontWeight: '700', margin: '0 0 4px 0' }}>{formattedSelectedDate}</p>
+                  <p style={{ fontSize: '13px', color: '#4b5563', fontWeight: '700', margin: 0 }}>Real-time scan-in/scan-out tracking for support staff</p>
+                </div>
                 <div className="summary-cards-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '28px' }}>
                   <div onClick={() => setNonTeachingFilterStatus('all')} className="pop-card" style={cardContainerStyle}>
                     <div style={cardTopAccentStyle}></div>
@@ -1590,7 +1948,9 @@ function App() {
           {/* QR & ID BADGES TAB */}
           {activeTab === 'ids' && (
             <div className="animated-pane">
-              <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#111827', marginBottom: '20px' }}>Printable ID Badges & QR Codes</h2>
+              <div style={sectionHeaderStyle}>
+                <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#111827', margin: 0 }}>Printable ID Badges & QR Codes</h2>
+              </div>
               
               <div style={{ position: 'relative', display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: '200px', position: 'relative' }}>
@@ -1673,7 +2033,7 @@ function App() {
         </main>
       </div>
 
-      {/* MANUAL ATTENDANCE ENTRY MODAL - with live search suggestions */}
+      {/* MANUAL ATTENDANCE ENTRY MODAL */}
       {manualModalOpen && (
         <div className="modal-overlay" onClick={() => setManualModalOpen(false)}>
           <div className="modal-content animated-pane" onClick={(e) => e.stopPropagation()}>
@@ -1684,27 +2044,13 @@ function App() {
             <form onSubmit={handleManualSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ position: 'relative' }}>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Full Name</label>
-                <input
-                  type="text"
-                  placeholder="Type to search..."
-                  value={manualEntryName}
-                  onChange={handleManualNameChange}
-                  onFocus={() => { if (manualEntryName.trim() !== '') handleManualNameChange({ target: { value: manualEntryName } }); }}
-                  style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', boxSizing: 'border-box', background: '#f3f4f6' }}
-                  required
-                />
+                <input type="text" placeholder="Type to search..." value={manualEntryName} onChange={handleManualNameChange} onFocus={() => { if (manualEntryName.trim() !== '') handleManualNameChange({ target: { value: manualEntryName } }); }} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', boxSizing: 'border-box', background: '#f3f4f6' }} required />
                 {manualSuggestions.length > 0 && (
                   <div style={{ position: 'absolute', top: '70px', left: 0, right: 0, background: '#e5e7eb', border: '1px solid #d1d5db', borderRadius: '8px', zIndex: 100, maxHeight: '200px', overflowY: 'auto', boxShadow: '0 8px 16px rgba(0,0,0,0.1)' }}>
                     {manualSuggestions.map((person) => {
                       const context = person.category === 'Pupil' ? `Class: ${person.class}` : person.category === 'Teacher' ? 'Teacher' : `Role: ${person.role}`;
                       return (
-                        <div
-                          key={person.id}
-                          onMouseDown={() => handleSuggestionClick(person)}
-                          style={{ padding: '10px 14px', cursor: 'pointer', fontWeight: '700', color: '#1f2937', borderBottom: '1px solid #d1d5db', background: '#f3f4f6' }}
-                          onMouseEnter={(e) => e.target.style.background = '#fee2e2'}
-                          onMouseLeave={(e) => e.target.style.background = '#f3f4f6'}
-                        >
+                        <div key={person.id} onMouseDown={() => handleSuggestionClick(person)} style={{ padding: '10px 14px', cursor: 'pointer', fontWeight: '700', color: '#1f2937', borderBottom: '1px solid #d1d5db', background: '#f3f4f6' }} onMouseEnter={(e) => e.target.style.background = '#fee2e2'} onMouseLeave={(e) => e.target.style.background = '#f3f4f6'}>
                           {person.name} - <span style={{ fontSize: '12px', color: '#4b5563' }}>{context}</span>
                         </div>
                       );
@@ -1714,20 +2060,13 @@ function App() {
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Status / Arrival</label>
-                <select
-                  value={manualEntryStatus}
-                  onChange={(e) => setManualEntryStatus(e.target.value)}
-                  style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }}
-                  required
-                >
+                <select value={manualEntryStatus} onChange={(e) => setManualEntryStatus(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }} required>
                   <option value="" disabled>Select status...</option>
                   <option value="Forgot/Lost ID">Forgot/Lost ID</option>
                   <option value="Late">Late</option>
                 </select>
               </div>
-              <button type="submit" style={{ padding: '14px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '900', cursor: 'pointer', marginTop: '10px' }}>
-                Submit Attendance
-              </button>
+              <button type="submit" style={{ padding: '14px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '900', cursor: 'pointer', marginTop: '10px' }}>Submit Attendance</button>
             </form>
           </div>
         </div>
@@ -1825,6 +2164,111 @@ function App() {
               {registrationSuccess} has been successfully registered. Their QR badge is now available in the QR Badges & IDs section.
             </p>
             <button onClick={() => setRegistrationSuccess(null)} style={{ padding: '10px 20px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '900', cursor: 'pointer' }}>OK</button>
+          </div>
+        </div>
+      )}
+
+      {/* ============ RECORD PAYMENT MODAL ============ */}
+      {showRecordPaymentModal && (
+        <div className="modal-overlay" onClick={() => setShowRecordPaymentModal(false)}>
+          <div className="modal-content animated-pane" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#111827' }}>💰 Add Payment</h2>
+              <button onClick={() => setShowRecordPaymentModal(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#4b5563', fontWeight: '900' }}>×</button>
+            </div>
+            <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Student</label>
+                <select value={paymentStudentId} onChange={(e) => setPaymentStudentId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }} required>
+                  <option value="">-- Select a student --</option>
+                  {pupilsForFinance.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.class || '—'})</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Amount (UGX)</label>
+                <input type="number" min="0" step="1000" placeholder="e.g. 200000" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', boxSizing: 'border-box', background: '#f3f4f6' }} required />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Payment Method</label>
+                <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }}>
+                  <option value="Cash">Cash</option>
+                  <option value="Bank Deposit">Bank Deposit</option>
+                  <option value="Mobile Money - MTN">Mobile Money - MTN</option>
+                  <option value="Mobile Money - Airtel">Mobile Money - Airtel</option>
+                </select>
+              </div>
+              <div style={{ fontSize: '12px', color: '#4b5563', fontWeight: '700', background: '#e5e7eb', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                Session: <strong>{financeYear} • {financeTerm}</strong>
+              </div>
+              <button type="submit" style={{ padding: '14px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '900', cursor: 'pointer' }}>Save Payment</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============ PAYMENT HISTORY MODAL ============ */}
+      {paymentHistoryStudent && (
+        <div className="modal-overlay" onClick={() => setPaymentHistoryStudent(null)}>
+          <div className="modal-content animated-pane" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#111827' }}>📜 Payment History</h2>
+                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#4b5563', fontWeight: '700' }}>
+                  {paymentHistoryStudent.student.name} • {paymentHistoryStudent.student.class || '—'} • {financeYear} • {financeTerm}
+                </p>
+              </div>
+              <button onClick={() => setPaymentHistoryStudent(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#4b5563', fontWeight: '900' }}>×</button>
+            </div>
+
+            {paymentHistoryStudent.payments.length === 0 ? (
+              <div style={{ background: '#faf9f7', borderRadius: '12px', padding: '30px', textAlign: 'center', border: '1px solid #d1d5db', color: '#4b5563', fontWeight: '700' }}>
+                No payments recorded for this student in {financeYear} • {financeTerm}.
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+                  <div style={{ background: '#faf9f7', padding: '14px', borderRadius: '12px', border: '1px solid #d1d5db', textAlign: 'center', borderTop: '4px solid #991b1b' }}>
+                    <p style={{ margin: 0, fontSize: '11px', fontWeight: '900', color: '#4b5563' }}>INSTALLMENTS</p>
+                    <h3 style={{ margin: '6px 0 0 0', fontSize: '20px', fontWeight: '900', color: '#111827' }}>{paymentHistoryStudent.payments.length}</h3>
+                  </div>
+                  <div style={{ background: '#faf9f7', padding: '14px', borderRadius: '12px', border: '1px solid #d1d5db', textAlign: 'center', borderTop: '4px solid #16a34a' }}>
+                    <p style={{ margin: 0, fontSize: '11px', fontWeight: '900', color: '#4b5563' }}>TOTAL PAID</p>
+                    <h3 style={{ margin: '6px 0 0 0', fontSize: '20px', fontWeight: '900', color: '#16a34a' }}>{formatUGX(paymentHistoryStudent.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0))}</h3>
+                  </div>
+                  <div style={{ background: '#faf9f7', padding: '14px', borderRadius: '12px', border: '1px solid #d1d5db', textAlign: 'center', borderTop: '4px solid #dc2626' }}>
+                    <p style={{ margin: 0, fontSize: '11px', fontWeight: '900', color: '#4b5563' }}>BALANCE</p>
+                    <h3 style={{ margin: '6px 0 0 0', fontSize: '20px', fontWeight: '900', color: '#dc2626' }}>
+                      {formatUGX(Math.max(0, getExpectedFee(paymentHistoryStudent.student.id) - paymentHistoryStudent.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)))}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="pop-card" style={{ background: '#e5e7eb', borderRadius: '12px', border: '1px solid #d1d5db', overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+                    <thead>
+                      <tr style={{ background: '#991b1b', color: 'white' }}>
+                        <th style={{ padding: '12px 16px', fontWeight: '900' }}>Date</th>
+                        <th style={{ padding: '12px 16px', fontWeight: '900' }}>Amount Paid (UGX)</th>
+                        <th style={{ padding: '12px 16px', fontWeight: '900' }}>Payment Method</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paymentHistoryStudent.payments.map((p, idx) => (
+                        <tr key={p.id} style={{ borderBottom: '1px solid #d1d5db', background: idx % 2 === 0 ? '#f3f4f6' : '#e5e7eb' }}>
+                          <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{p.date}</td>
+                          <td style={{ padding: '12px 16px', fontWeight: '900', color: '#16a34a' }}>{formatUGX(p.amount)}</td>
+                          <td style={{ padding: '12px 16px', fontWeight: '700', color: '#111827' }}>{p.method}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+                  <button onClick={() => setPaymentHistoryStudent(null)} style={{ padding: '10px 20px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '900', cursor: 'pointer' }}>Close</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

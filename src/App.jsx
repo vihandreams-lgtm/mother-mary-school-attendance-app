@@ -178,8 +178,8 @@ function App() {
     };
   }, []);
 
-  // ============ FIXED: resetDailyIfNeeded ============
-  // Now protects students who already have an attendance record for today
+  // ============ resetDailyIfNeeded ============
+  // Protects students who already have an attendance record for today
   // so that a re-run of the reset NEVER wipes their "Present" status.
   const resetDailyIfNeeded = async () => {
     try {
@@ -242,6 +242,48 @@ function App() {
 
   const today = getEATDate();
   const [selectedDate, setSelectedDate] = useState(today);
+
+  // ============ Date-aware helpers ============
+  // Returns the effective attendance record for a person on a given date.
+  // Today = live values; past date = from attendanceHistory; no record = Absent.
+  const getRecordForDate = (person, dateStr) => {
+    const rec = person.attendanceHistory?.[dateStr];
+    if (rec) {
+      return {
+        arrivalTime: rec.arrivalTime || '--',
+        morningStatus: rec.morningStatus || 'Absent',
+        departureTime: rec.departureTime || '--',
+        eveningStatus: rec.eveningStatus || 'Absent',
+      };
+    }
+    if (dateStr === today) {
+      return {
+        arrivalTime: person.arrivalTime || '--',
+        morningStatus: person.morningStatus || 'Absent',
+        departureTime: person.departureTime || '--',
+        eveningStatus: person.eveningStatus || 'Absent',
+      };
+    }
+    return {
+      arrivalTime: '--',
+      morningStatus: 'Absent',
+      departureTime: '--',
+      eveningStatus: 'Absent',
+    };
+  };
+
+  // Parse a time string like "07:45 AM" or "14:30" to minutes since midnight (for sorting)
+  const timeToMinutes = (t) => {
+    if (!t || t === '--') return Number.MAX_SAFE_INTEGER;
+    const m = String(t).match(/(\d{1,2}):(\d{2})(?:\s*([AP]M))?/i);
+    if (!m) return Number.MAX_SAFE_INTEGER;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const ampm = (m[3] || '').toUpperCase();
+    if (ampm === 'PM' && h < 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return h * 60 + min;
+  };
 
   const [termStartDate, setTermStartDate] = useState('2026-01-01');
   const [termEndDate, setTermEndDate] = useState('2026-12-31');
@@ -398,7 +440,6 @@ function App() {
             [dateKey]: { arrivalTime: timeString, morningStatus, departureTime: '--', eveningStatus: 'On Campus' },
           },
         };
-        // ============ FIXED: tagged attendance record ============
         await addDoc(collection(db, 'attendance'), {
           name: person.name,
           category: person.category,
@@ -599,7 +640,6 @@ function App() {
 
       await updateDoc(docRef, updatedPerson);
 
-      // ============ FIXED: tagged attendance record ============
       await addDoc(collection(db, 'attendance'), {
         name: existing.name,
         category: existing.category,
@@ -696,16 +736,26 @@ function App() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [allUsers, submittedSearch, idCategoryFilter, idClassFilter]);
 
+  // ============ Date-aware summary counts (Option 2: no record = Absent) ============
   const totalPupils = pupils.length;
-  const presentPupils = pupils.filter((p) => p.status === 'Present').length;
+  const presentPupils = pupils.filter((p) => {
+    const r = getRecordForDate(p, selectedDate);
+    return r.morningStatus === 'Present' || r.morningStatus === 'Late';
+  }).length;
   const absentPupils = totalPupils - presentPupils;
 
   const totalTeachers = teachers.length;
-  const presentTeachers = teachers.filter((t) => t.status === 'Present').length;
+  const presentTeachers = teachers.filter((t) => {
+    const r = getRecordForDate(t, selectedDate);
+    return r.morningStatus === 'Present' || r.morningStatus === 'Late';
+  }).length;
   const absentTeachers = totalTeachers - presentTeachers;
 
   const totalNonTeaching = nonTeaching.length;
-  const presentNonTeaching = nonTeaching.filter((n) => n.status === 'Present').length;
+  const presentNonTeaching = nonTeaching.filter((n) => {
+    const r = getRecordForDate(n, selectedDate);
+    return r.morningStatus === 'Present' || r.morningStatus === 'Late';
+  }).length;
   const absentNonTeaching = totalNonTeaching - presentNonTeaching;
 
   const dailyReport = useMemo(() => {
@@ -743,7 +793,15 @@ function App() {
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [pupils, teachers, nonTeaching, selectedDate, today]);
 
-  const arrivedReport = dailyReport.filter(row => row.morningStatus === 'Present' || row.morningStatus === 'Late');
+  // ============ Dashboard table: sorted by arrival time (earliest first), tie-break by name ============
+  const arrivedReport = dailyReport
+    .filter(row => row.morningStatus === 'Present' || row.morningStatus === 'Late')
+    .sort((a, b) => {
+      const ta = timeToMinutes(a.arrivalTime);
+      const tb = timeToMinutes(b.arrivalTime);
+      if (ta !== tb) return ta - tb;
+      return a.name.localeCompare(b.name);
+    });
 
   const totalRows = arrivedReport.length;
   const totalPages = Math.ceil(totalRows / rowsPerPage);
@@ -815,28 +873,43 @@ function App() {
     }, 250);
   };
 
+  // ============ Class metrics — date-aware ============
   const classPupils = pupils.filter((p) => p.class === selectedClassView);
   const totalInClass = classPupils.length;
-  const presentInClass = classPupils.filter((p) => p.morningStatus === 'Present' || p.morningStatus === 'Late').length;
+  const presentInClass = classPupils.filter((p) => {
+    const r = getRecordForDate(p, selectedDate);
+    return r.morningStatus === 'Present' || r.morningStatus === 'Late';
+  }).length;
   const absentInClass = totalInClass - presentInClass;
 
-  const filteredClassPupils = classPupils.filter((p) => {
-    const matchesSearch = p.name.toLowerCase().includes(studentSearchQuery.toLowerCase());
-    if (classFilterStatus === 'present') return matchesSearch && (p.morningStatus === 'Present' || p.morningStatus === 'Late');
-    if (classFilterStatus === 'absent') return matchesSearch && p.morningStatus === 'Absent';
-    return matchesSearch;
-  });
+  // ============ Directory table: alphabetical + date-aware filter ============
+  const filteredClassPupils = classPupils
+    .filter((p) => {
+      const matchesSearch = p.name.toLowerCase().includes(studentSearchQuery.toLowerCase());
+      const r = getRecordForDate(p, selectedDate);
+      if (classFilterStatus === 'present') return matchesSearch && (r.morningStatus === 'Present' || r.morningStatus === 'Late');
+      if (classFilterStatus === 'absent') return matchesSearch && r.morningStatus === 'Absent';
+      return matchesSearch;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  const filteredTeachers = teachers.filter((t) => {
-    if (teacherFilterStatus === 'present') return t.status === 'Present';
-    if (teacherFilterStatus === 'absent') return t.status === 'Absent';
-    return true;
-  });
-  const filteredNonTeaching = nonTeaching.filter((n) => {
-    if (nonTeachingFilterStatus === 'present') return n.status === 'Present';
-    if (nonTeachingFilterStatus === 'absent') return n.status === 'Absent';
-    return true;
-  });
+  const filteredTeachers = teachers
+    .filter((t) => {
+      const r = getRecordForDate(t, selectedDate);
+      if (teacherFilterStatus === 'present') return r.morningStatus === 'Present' || r.morningStatus === 'Late';
+      if (teacherFilterStatus === 'absent') return r.morningStatus === 'Absent';
+      return true;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const filteredNonTeaching = nonTeaching
+    .filter((n) => {
+      const r = getRecordForDate(n, selectedDate);
+      if (nonTeachingFilterStatus === 'present') return r.morningStatus === 'Present' || r.morningStatus === 'Late';
+      if (nonTeachingFilterStatus === 'absent') return r.morningStatus === 'Absent';
+      return true;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const closeModal = () => setModalCategory(null);
   const resetIdFilters = () => {
@@ -1146,16 +1219,13 @@ function App() {
   }
 
   // ============ DUTY TEACHER ROUTE ============
-  // Users with role 'scanner_agent' get the locked-down scanner UI only.
   if (userRole === 'scanner_agent') {
     return (
       <DutyTeacherScanner
         onScan={async (parsed, rawValue) => {
           await handleScan([{ rawValue }]);
         }}
-        onLogout={() => {
-          // signOut() runs inside DutyTeacherScanner; onAuthStateChanged handles the rest
-        }}
+        onLogout={() => {}}
       />
     );
   }
@@ -1229,6 +1299,22 @@ function App() {
             )}
           </div>
 
+          {/* ============ FINANCE moved up (right after Attendance Directory) ============ */}
+          <button
+            onClick={() => { setActiveTab('finance'); setOpenDropdown(null); setMobileMenuOpen(false); }}
+            className="sidebar-main-btn pop-card"
+            style={{
+              width: '100%', padding: '15px 18px',
+              background: activeTab === 'finance' ? '#f3f4f6' : '#d1d5db',
+              border: activeTab === 'finance' ? '2px solid #991b1b' : '1px solid #9ca3af',
+              borderRadius: '12px', color: activeTab === 'finance' ? '#991b1b' : '#1f2937',
+              fontWeight: '900', cursor: 'pointer', fontSize: '14px', textAlign: 'left',
+              transform: activeTab === 'finance' ? 'translateX(4px)' : 'none',
+            }}
+          >
+            💰 Finance
+          </button>
+
           <button onClick={() => { setActiveTab('scanner'); setOpenDropdown(null); setMobileMenuOpen(false); }} className="sidebar-main-btn pop-card" style={{ width: '100%', padding: '15px 18px', background: activeTab === 'scanner' ? '#f3f4f6' : '#d1d5db', border: activeTab === 'scanner' ? '2px solid #991b1b' : '1px solid #9ca3af', borderRadius: '12px', color: activeTab === 'scanner' ? '#991b1b' : '#1f2937', fontWeight: '900', cursor: 'pointer', fontSize: '14px', textAlign: 'left', transform: activeTab === 'scanner' ? 'translateX(4px)' : 'none' }}>📷 Live QR Scanner</button>
 
           <div>
@@ -1258,21 +1344,6 @@ function App() {
           </div>
 
           <button onClick={() => { setActiveTab('calendar'); setOpenDropdown(null); setMobileMenuOpen(false); }} className="sidebar-main-btn pop-card" style={{ width: '100%', padding: '15px 18px', background: activeTab === 'calendar' ? '#f3f4f6' : '#d1d5db', border: activeTab === 'calendar' ? '2px solid #991b1b' : '1px solid #9ca3af', borderRadius: '12px', color: activeTab === 'calendar' ? '#991b1b' : '#1f2937', fontWeight: '900', cursor: 'pointer', fontSize: '14px', textAlign: 'left', transform: activeTab === 'calendar' ? 'translateX(4px)' : 'none' }}>🗓️ Calendar Settings</button>
-
-          <button
-            onClick={() => { setActiveTab('finance'); setOpenDropdown(null); setMobileMenuOpen(false); }}
-            className="sidebar-main-btn pop-card"
-            style={{
-              width: '100%', padding: '15px 18px',
-              background: activeTab === 'finance' ? '#f3f4f6' : '#d1d5db',
-              border: activeTab === 'finance' ? '2px solid #991b1b' : '1px solid #9ca3af',
-              borderRadius: '12px', color: activeTab === 'finance' ? '#991b1b' : '#1f2937',
-              fontWeight: '900', cursor: 'pointer', fontSize: '14px', textAlign: 'left',
-              transform: activeTab === 'finance' ? 'translateX(4px)' : 'none',
-            }}
-          >
-            💰 Finance
-          </button>
         </div>
       </div>
 
@@ -1493,20 +1564,31 @@ function App() {
                         <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: '#4b5563', fontWeight: '700' }}>No arrivals recorded for this date.</td>
                       </tr>
                     ) : (
-                      pageRows.map((row, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px solid #d1d5db', background: idx % 2 === 0 ? '#f3f4f6' : '#e5e7eb' }}>
-                          <td style={{ padding: '12px 16px', fontWeight: '900', color: '#111827' }}>{row.name}</td>
-                          <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{row.category}</td>
-                          <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{row.arrivalTime}</td>
-                          <td style={{ padding: '12px 16px' }}>
-                            <span style={{ padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: '900', background: row.morningStatus === 'Present' ? '#dcfce7' : row.morningStatus === 'Late' ? '#fef9c3' : '#fee2e2', color: row.morningStatus === 'Present' ? '#166534' : row.morningStatus === 'Late' ? '#854d0e' : '#991b1b' }}>{row.morningStatus}</span>
-                          </td>
-                          <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{row.departureTime}</td>
-                          <td style={{ padding: '12px 16px' }}>
-                            <span style={{ padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: '900', background: row.eveningStatus === 'Departed' ? '#e0f2fe' : row.eveningStatus === 'On Campus' ? '#fef9c3' : '#f1f5f9', color: row.eveningStatus === 'Departed' ? '#0369a1' : row.eveningStatus === 'On Campus' ? '#854d0e' : '#4b5563' }}>{row.eveningStatus}</span>
-                          </td>
-                        </tr>
-                      ))
+                      pageRows.map((row, idx) => {
+                        const noScanOut = selectedDate !== today && row.arrivalTime !== '--' && (row.departureTime === '--' || !row.departureTime);
+                        const eveningLabel = noScanOut ? 'No Scan Out' : row.eveningStatus;
+                        const eveningStyle = noScanOut
+                          ? { background: '#fed7aa', color: '#9a3412', border: '1px solid #fdba74' }
+                          : row.eveningStatus === 'Departed'
+                          ? { background: '#e0f2fe', color: '#0369a1' }
+                          : row.eveningStatus === 'On Campus'
+                          ? { background: '#fef9c3', color: '#854d0e' }
+                          : { background: '#f1f5f9', color: '#4b5563' };
+                        return (
+                          <tr key={idx} style={{ borderBottom: '1px solid #d1d5db', background: idx % 2 === 0 ? '#f3f4f6' : '#e5e7eb' }}>
+                            <td style={{ padding: '12px 16px', fontWeight: '900', color: '#111827' }}>{row.name}</td>
+                            <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{row.category}</td>
+                            <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{row.arrivalTime}</td>
+                            <td style={{ padding: '12px 16px' }}>
+                              <span style={{ padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: '900', background: row.morningStatus === 'Present' ? '#dcfce7' : row.morningStatus === 'Late' ? '#fef9c3' : '#fee2e2', color: row.morningStatus === 'Present' ? '#166534' : row.morningStatus === 'Late' ? '#854d0e' : '#991b1b' }}>{row.morningStatus}</span>
+                            </td>
+                            <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{row.departureTime}</td>
+                            <td style={{ padding: '12px 16px' }}>
+                              <span style={{ padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: '900', ...eveningStyle }}>{eveningLabel}</span>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -1824,17 +1906,25 @@ function App() {
                       <tr><td colSpan="6" style={{ padding: '30px', textAlign: 'center', color: '#4b5563', fontWeight: '700' }}>No students found matching your criteria in {selectedClassView}.</td></tr>
                     ) : (
                       filteredClassPupils.map((pupil, idx) => {
-                        const isPresent = pupil.morningStatus === 'Present';
-                        const isLate = pupil.morningStatus === 'Late';
-                        const isDeparted = pupil.eveningStatus === 'Departed';
-                        const isOnCampus = pupil.eveningStatus === 'On Campus';
+                        const rec = getRecordForDate(pupil, selectedDate);
+                        const isPresent = rec.morningStatus === 'Present';
+                        const isLate = rec.morningStatus === 'Late';
+                        const noScanOut = selectedDate !== today && rec.arrivalTime !== '--' && (rec.departureTime === '--' || !rec.departureTime);
+                        const eveningLabel = noScanOut ? 'No Scan Out' : rec.eveningStatus;
+                        const eveningStyle = noScanOut
+                          ? { background: '#fed7aa', color: '#9a3412', border: '1px solid #fdba74' }
+                          : rec.eveningStatus === 'Departed'
+                          ? { background: '#e0f2fe', color: '#0369a1' }
+                          : rec.eveningStatus === 'On Campus'
+                          ? { background: '#fef9c3', color: '#854d0e' }
+                          : { background: '#f1f5f9', color: '#4b5563' };
                         return (
                           <tr key={pupil.id} style={{ borderBottom: '1px solid #d1d5db', background: idx % 2 === 0 ? '#f3f4f6' : '#e5e7eb' }}>
                             <td style={{ padding: '14px 18px', fontWeight: '900', color: '#111827' }}>{pupil.name}</td>
-                            <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{pupil.arrivalTime || '--'}</td>
-                            <td style={{ padding: '14px 18px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', background: isPresent ? '#dcfce7' : isLate ? '#fef9c3' : '#fee2e2', color: isPresent ? '#166534' : isLate ? '#854d0e' : '#991b1b', display: 'inline-block' }}>{pupil.morningStatus}</span></td>
-                            <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{pupil.departureTime || '--'}</td>
-                            <td style={{ padding: '14px 18px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', background: isDeparted ? '#e0f2fe' : isOnCampus ? '#fef9c3' : '#f1f5f9', color: isDeparted ? '#0369a1' : isOnCampus ? '#854d0e' : '#4b5563', display: 'inline-block' }}>{pupil.eveningStatus}</span></td>
+                            <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{rec.arrivalTime}</td>
+                            <td style={{ padding: '14px 18px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', background: isPresent ? '#dcfce7' : isLate ? '#fef9c3' : '#fee2e2', color: isPresent ? '#166534' : isLate ? '#854d0e' : '#991b1b', display: 'inline-block' }}>{rec.morningStatus}</span></td>
+                            <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{rec.departureTime}</td>
+                            <td style={{ padding: '14px 18px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', display: 'inline-block', ...eveningStyle }}>{eveningLabel}</span></td>
                             <td style={{ padding: '14px 18px' }}><button onClick={() => openHistoryModal(pupil, 'Pupil')} className="history-btn" style={{ padding: '6px 12px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '12px' }}>📊 View</button></td>
                           </tr>
                         );
@@ -1877,17 +1967,25 @@ function App() {
                     <thead><tr style={{ background: '#991b1b', color: 'white' }}><th style={{ padding: '14px 18px', fontWeight: '900' }}>Name</th><th style={{ padding: '14px 18px', fontWeight: '900' }}>Arrival Time</th><th style={{ padding: '14px 18px', fontWeight: '900' }}>Morning Status</th><th style={{ padding: '14px 18px', fontWeight: '900' }}>Departure Time</th><th style={{ padding: '14px 18px', fontWeight: '900' }}>Evening Status</th><th style={{ padding: '14px 18px', fontWeight: '900' }}>History</th></tr></thead>
                     <tbody>
                       {filteredTeachers.length === 0 ? <tr><td colSpan="6" style={{ padding: '30px', textAlign: 'center', color: '#4b5563', fontWeight: '700' }}>No teachers found matching filter.</td></tr> : filteredTeachers.map((teacher, idx) => {
-                        const isPresent = teacher.morningStatus === 'Present';
-                        const isLate = teacher.morningStatus === 'Late';
-                        const isDeparted = teacher.eveningStatus === 'Departed';
-                        const isOnCampus = teacher.eveningStatus === 'On Campus';
+                        const rec = getRecordForDate(teacher, selectedDate);
+                        const isPresent = rec.morningStatus === 'Present';
+                        const isLate = rec.morningStatus === 'Late';
+                        const noScanOut = selectedDate !== today && rec.arrivalTime !== '--' && (rec.departureTime === '--' || !rec.departureTime);
+                        const eveningLabel = noScanOut ? 'No Scan Out' : rec.eveningStatus;
+                        const eveningStyle = noScanOut
+                          ? { background: '#fed7aa', color: '#9a3412', border: '1px solid #fdba74' }
+                          : rec.eveningStatus === 'Departed'
+                          ? { background: '#e0f2fe', color: '#0369a1' }
+                          : rec.eveningStatus === 'On Campus'
+                          ? { background: '#fef9c3', color: '#854d0e' }
+                          : { background: '#f1f5f9', color: '#4b5563' };
                         return (
                           <tr key={teacher.id} style={{ borderBottom: '1px solid #d1d5db', background: idx % 2 === 0 ? '#f3f4f6' : '#e5e7eb' }}>
                             <td style={{ padding: '14px 18px', fontWeight: '900', color: '#111827' }}>{teacher.name}</td>
-                            <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{teacher.arrivalTime || '--'}</td>
-                            <td style={{ padding: '14px 18px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', background: isPresent ? '#dcfce7' : isLate ? '#fef9c3' : '#fee2e2', color: isPresent ? '#166534' : isLate ? '#854d0e' : '#991b1b', display: 'inline-block' }}>{teacher.morningStatus}</span></td>
-                            <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{teacher.departureTime || '--'}</td>
-                            <td style={{ padding: '14px 18px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', background: isDeparted ? '#e0f2fe' : isOnCampus ? '#fef9c3' : '#f1f5f9', color: isDeparted ? '#0369a1' : isOnCampus ? '#854d0e' : '#4b5563', display: 'inline-block' }}>{teacher.eveningStatus}</span></td>
+                            <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{rec.arrivalTime}</td>
+                            <td style={{ padding: '14px 18px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', background: isPresent ? '#dcfce7' : isLate ? '#fef9c3' : '#fee2e2', color: isPresent ? '#166534' : isLate ? '#854d0e' : '#991b1b', display: 'inline-block' }}>{rec.morningStatus}</span></td>
+                            <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{rec.departureTime}</td>
+                            <td style={{ padding: '14px 18px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', display: 'inline-block', ...eveningStyle }}>{eveningLabel}</span></td>
                             <td style={{ padding: '14px 18px' }}><button onClick={() => openHistoryModal(teacher, 'Teacher')} className="history-btn" style={{ padding: '6px 12px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '12px' }}>📊 View</button></td>
                           </tr>
                         );
@@ -1925,18 +2023,26 @@ function App() {
                     <thead><tr style={{ background: '#991b1b', color: 'white' }}><th style={{ padding: '14px 18px', fontWeight: '900' }}>Name</th><th style={{ padding: '14px 18px', fontWeight: '900' }}>Role</th><th style={{ padding: '14px 18px', fontWeight: '900' }}>Arrival Time</th><th style={{ padding: '14px 18px', fontWeight: '900' }}>Morning Status</th><th style={{ padding: '14px 18px', fontWeight: '900' }}>Departure Time</th><th style={{ padding: '14px 18px', fontWeight: '900' }}>Evening Status</th><th style={{ padding: '14px 18px', fontWeight: '900' }}>History</th></tr></thead>
                     <tbody>
                       {filteredNonTeaching.length === 0 ? <tr><td colSpan="7" style={{ padding: '30px', textAlign: 'center', color: '#4b5563', fontWeight: '700' }}>No non-teaching staff found matching filter.</td></tr> : filteredNonTeaching.map((staff, idx) => {
-                        const isPresent = staff.morningStatus === 'Present';
-                        const isLate = staff.morningStatus === 'Late';
-                        const isDeparted = staff.eveningStatus === 'Departed';
-                        const isOnCampus = staff.eveningStatus === 'On Campus';
+                        const rec = getRecordForDate(staff, selectedDate);
+                        const isPresent = rec.morningStatus === 'Present';
+                        const isLate = rec.morningStatus === 'Late';
+                        const noScanOut = selectedDate !== today && rec.arrivalTime !== '--' && (rec.departureTime === '--' || !rec.departureTime);
+                        const eveningLabel = noScanOut ? 'No Scan Out' : rec.eveningStatus;
+                        const eveningStyle = noScanOut
+                          ? { background: '#fed7aa', color: '#9a3412', border: '1px solid #fdba74' }
+                          : rec.eveningStatus === 'Departed'
+                          ? { background: '#e0f2fe', color: '#0369a1' }
+                          : rec.eveningStatus === 'On Campus'
+                          ? { background: '#fef9c3', color: '#854d0e' }
+                          : { background: '#f1f5f9', color: '#4b5563' };
                         return (
                           <tr key={staff.id} style={{ borderBottom: '1px solid #d1d5db', background: idx % 2 === 0 ? '#f3f4f6' : '#e5e7eb' }}>
                             <td style={{ padding: '14px 18px', fontWeight: '900', color: '#111827' }}>{staff.name}</td>
                             <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{staff.role}</td>
-                            <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{staff.arrivalTime || '--'}</td>
-                            <td style={{ padding: '14px 18px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', background: isPresent ? '#dcfce7' : isLate ? '#fef9c3' : '#fee2e2', color: isPresent ? '#166534' : isLate ? '#854d0e' : '#991b1b', display: 'inline-block' }}>{staff.morningStatus}</span></td>
-                            <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{staff.departureTime || '--'}</td>
-                            <td style={{ padding: '14px 18px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', background: isDeparted ? '#e0f2fe' : isOnCampus ? '#fef9c3' : '#f1f5f9', color: isDeparted ? '#0369a1' : isOnCampus ? '#854d0e' : '#4b5563', display: 'inline-block' }}>{staff.eveningStatus}</span></td>
+                            <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{rec.arrivalTime}</td>
+                            <td style={{ padding: '14px 18px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', background: isPresent ? '#dcfce7' : isLate ? '#fef9c3' : '#fee2e2', color: isPresent ? '#166534' : isLate ? '#854d0e' : '#991b1b', display: 'inline-block' }}>{rec.morningStatus}</span></td>
+                            <td style={{ padding: '14px 18px', fontWeight: '700', color: '#4b5563' }}>{rec.departureTime}</td>
+                            <td style={{ padding: '14px 18px' }}><span style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', display: 'inline-block', ...eveningStyle }}>{eveningLabel}</span></td>
                             <td style={{ padding: '14px 18px' }}><button onClick={() => openHistoryModal(staff, 'Non-Teaching')} className="history-btn" style={{ padding: '6px 12px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '12px' }}>📊 View</button></td>
                           </tr>
                         );

@@ -815,16 +815,27 @@ function App() {
       alert('Please allow pop-ups to download the PDF.');
       return;
     }
-    const tableRows = arrivedReport.map(row => `
-      <tr>
-        <td>${row.name || ''}</td>
-        <td>${row.category || ''}</td>
-        <td>${row.arrivalTime || ''}</td>
-        <td>${row.morningStatus || ''}</td>
-        <td>${row.departureTime || ''}</td>
-        <td>${row.eveningStatus || ''}</td>
-      </tr>
-    `).join('');
+    const tableRows = arrivedReport.map(row => {
+      const noScanOut = selectedDate !== today && row.arrivalTime !== '--' && (row.departureTime === '--' || !row.departureTime);
+      const eveningLabel = noScanOut ? 'No Scan Out' : row.eveningStatus;
+      const eveningColor = noScanOut
+        ? '#9a3412'
+        : row.eveningStatus === 'Departed'
+        ? '#0369a1'
+        : row.eveningStatus === 'On Campus'
+        ? '#854d0e'
+        : '#4b5563';
+      return `
+        <tr>
+          <td>${row.name || ''}</td>
+          <td>${row.category || ''}</td>
+          <td>${row.arrivalTime || ''}</td>
+          <td>${row.morningStatus || ''}</td>
+          <td>${row.departureTime || ''}</td>
+          <td style="color:${eveningColor}; font-weight:700;">${eveningLabel}</td>
+        </tr>
+      `;
+    }).join('');
     printWindow.document.write(`
       <html>
         <head>
@@ -872,7 +883,7 @@ function App() {
       printWindow.print();
     }, 250);
   };
-
+  
   // ============ Class metrics — date-aware ============
   const classPupils = pupils.filter((p) => p.class === selectedClassView);
   const totalInClass = classPupils.length;

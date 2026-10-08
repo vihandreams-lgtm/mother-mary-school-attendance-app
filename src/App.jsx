@@ -31,6 +31,42 @@ const getEATDate = () => {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
 };
 
+// ============ PHOTO HELPERS ============
+// Resize + compress an image file to a base64 JPEG data URL.
+// Keeps Firestore documents small (~30–50KB typical).
+const compressImage = (file, maxSize = 400, quality = 0.8) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read_failed'));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('decode_failed'));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height) {
+          if (width > maxSize) {
+            height = Math.round((height * maxSize) / width);
+            width = maxSize;
+          }
+        } else {
+          if (height > maxSize) {
+            width = Math.round((width * maxSize) / height);
+            height = maxSize;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
 // ============ SMS HELPERS ============
 const SMS_WORKER_URL = 'https://hidden-star-3e60.vihandreams.workers.dev/';
 
@@ -45,7 +81,6 @@ const normalizePhone = (raw) => {
   return null;
 };
 
-// Fire-and-forget SMS sender. Never throws into the caller.
 const sendAttendanceSMS = async ({ phone, pupilName, type, time, date }) => {
   try {
     const normalized = normalizePhone(phone);
@@ -200,7 +235,6 @@ function App() {
     };
   }, []);
 
-  // ============ resetDailyIfNeeded ============
   const resetDailyIfNeeded = async () => {
     try {
       const eatDate = getEATDate();
@@ -371,6 +405,14 @@ function App() {
   const [telInput, setTelInput] = useState('');
   const [roleInput, setRoleInput] = useState('Security');
 
+  // ============ PHOTO STATE (registration) ============
+  const [photoInput, setPhotoInput] = useState('');
+  const [photoBusy, setPhotoBusy] = useState(false);
+
+  // ============ EDIT MODAL STATE ============
+  const [editingPerson, setEditingPerson] = useState(null);
+  const [editPhotoBusy, setEditPhotoBusy] = useState(false);
+
   const schoolClasses = ["Baby Class", "Middle Class", "Top Class", "P.1", "P.2", "P.3", "P.4", "P.5", "P.6", "P.7"];
   const [selectedClassView, setSelectedClassView] = useState("P.2");
   const [studentSearchQuery, setStudentSearchQuery] = useState("");
@@ -528,7 +570,6 @@ function App() {
 
       await updateDoc(docRef, updatedPerson);
 
-      // ============ SMS Notification (fire-and-forget) ============
       if (
         person.category === 'Pupil' &&
         person.parentTel &&
@@ -569,10 +610,118 @@ function App() {
     }
   };
 
+  // ============ PHOTO HANDLERS ============
+  const handlePhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoBusy(true);
+    try {
+      const compressed = await compressImage(file, 400, 0.8);
+      setPhotoInput(compressed);
+    } catch (err) {
+      console.error('Photo processing failed:', err);
+      alert('Could not process that image. Please try a different photo.');
+    } finally {
+      setPhotoBusy(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleEditPhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEditPhotoBusy(true);
+    try {
+      const compressed = await compressImage(file, 400, 0.8);
+      setEditingPerson((prev) => (prev ? { ...prev, photo: compressed } : prev));
+    } catch (err) {
+      console.error('Photo processing failed:', err);
+      alert('Could not process that image. Please try a different photo.');
+    } finally {
+      setEditPhotoBusy(false);
+      e.target.value = '';
+    }
+  };
+
+  // ============ EDIT MODAL HANDLERS ============
+  const openEditModal = (person) => {
+    setEditingPerson({
+      id: person.id,
+      category: person.category,
+      name: person.name || '',
+      class: person.class || 'Baby Class',
+      sex: person.sex || 'Male',
+      tel: person.parentTel || '',
+      role: person.role || 'Security',
+      photo: person.photo || '',
+    });
+  };
+
+  const handleEditSave = async (e) => {
+    e.preventDefault();
+    if (!editingPerson) return;
+
+    const trimmedName = editingPerson.name.trim();
+    if (!trimmedName) {
+      alert('Name cannot be empty.');
+      return;
+    }
+    if (!editingPerson.photo) {
+      alert('A photo is required. Please upload one.');
+      return;
+    }
+
+    let collectionName = '';
+    if (editingPerson.category === 'Pupil') collectionName = 'pupils';
+    else if (editingPerson.category === 'Teacher') collectionName = 'teachers';
+    else if (editingPerson.category === 'Non-Teaching') collectionName = 'nonTeaching';
+    if (!collectionName) return;
+
+    try {
+      const updateData = {
+        name: trimmedName,
+        photo: editingPerson.photo,
+      };
+
+      if (editingPerson.category === 'Pupil') {
+        updateData.class = editingPerson.class;
+        updateData.sex = editingPerson.sex;
+        updateData.parentTel = editingPerson.tel;
+        updateData.qrCodeData = JSON.stringify({
+          type: 'Pupil',
+          name: trimmedName,
+          class: editingPerson.class,
+        });
+      } else if (editingPerson.category === 'Teacher') {
+        updateData.qrCodeData = JSON.stringify({
+          type: 'Teacher',
+          name: trimmedName,
+        });
+      } else if (editingPerson.category === 'Non-Teaching') {
+        updateData.role = editingPerson.role;
+        updateData.qrCodeData = JSON.stringify({
+          type: 'Non-Teaching',
+          name: trimmedName,
+          role: editingPerson.role,
+        });
+      }
+
+      await updateDoc(doc(db, collectionName, editingPerson.id), updateData);
+      setEditingPerson(null);
+    } catch (err) {
+      console.error('Edit save failed:', err);
+      alert('Failed to save changes. Please try again.');
+    }
+  };
+
   const handleRegistration = async (e) => {
     e.preventDefault();
     if (!nameInput.trim()) {
       alert('Please enter a name!');
+      return;
+    }
+    if (!photoInput) {
+      alert('Please add a photo. A photo is required for every registration.');
       return;
     }
 
@@ -586,6 +735,7 @@ function App() {
       eveningStatus: 'Absent',
       attendanceCount: 0,
       attendanceHistory: {},
+      photo: photoInput,
       qrCodeData: JSON.stringify({
         type: regType === 'teacher' ? 'Teacher' : regType === 'non-teaching' ? 'Non-Teaching' : 'Pupil',
         name: nameInput,
@@ -610,6 +760,7 @@ function App() {
       await addDoc(collection(db, collectionName), newPerson);
       setNameInput('');
       setTelInput('');
+      setPhotoInput('');
       setRegistrationSuccess(newPerson.name);
     } catch (error) {
       console.error('Registration error:', error);
@@ -629,7 +780,6 @@ function App() {
     }
   };
 
-  // ============ MARK PRESENT (alternate flow) — with SMS trigger ============
   const handleManualMarkPresent = async (personId, category, tag) => {
     const now = new Date();
     const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -684,7 +834,6 @@ function App() {
     }
   };
 
-  // ============ MANUAL ENTRY MODAL SUBMIT — with SMS trigger ============
   const handleManualSubmit = async (e) => {
     e.preventDefault();
     if (!manualEntryName.trim() || !manualEntryStatus) {
@@ -818,45 +967,160 @@ function App() {
     setManualSuggestions([]);
   };
 
-  const downloadQRCode = (user) => {
+  // ============ DOWNLOAD BADGE (with photo) ============
+  const downloadQRCode = async (user) => {
     const svgElement = document.getElementById(`qr-svg-${user.id}`);
     if (!svgElement) return;
+
     const svgString = new XMLSerializer().serializeToString(svgElement);
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const img = new Image();
-    canvas.width = 400;
-    canvas.height = 480;
-    img.onload = () => {
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const svgUrl = URL.createObjectURL(svgBlob);
+
+    const loadImage = (src) =>
+      new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('image_load_failed'));
+        img.src = src;
+      });
+
+    try {
+      const qrImg = await loadImage(svgUrl);
+      let photoImg = null;
+      if (user.photo) {
+        try {
+          photoImg = await loadImage(user.photo);
+        } catch {
+          photoImg = null;
+        }
+      }
+
+      const W = 400;
+      const H = 600;
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = W;
+      canvas.height = H;
+
+      // White background
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, W, H);
+
+      // Outer maroon border
       ctx.strokeStyle = '#991b1b';
       ctx.lineWidth = 6;
-      ctx.strokeRect(15, 15, canvas.width - 30, canvas.height - 30);
+      ctx.strokeRect(12, 12, W - 24, H - 24);
+
+      // Thin inner decorative line
+      ctx.strokeStyle = '#fecaca';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(24, 24, W - 48, H - 48);
+
+      // Header: school name
       ctx.fillStyle = '#991b1b';
-      ctx.font = 'bold 20px Inter, sans-serif';
+      ctx.font = 'bold 17px Inter, Arial, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Mother Mary Primary School Limited', canvas.width / 2, 55);
-      ctx.fillStyle = '#475569';
-      ctx.font = 'bold 12px Inter, sans-serif';
-      ctx.fillText('P.O. Box 115301 Wakiso', canvas.width / 2, 75);
-      ctx.drawImage(img, 75, 100, 250, 250);
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 18px Inter, sans-serif';
-      ctx.fillText(user.name, canvas.width / 2, 385);
-      ctx.fillStyle = '#64748b';
-      ctx.font = 'bold 14px Inter, sans-serif';
-      let subtitle = user.category;
-      if (user.class) subtitle = `Pupil • Class: ${user.class}`;
-      if (user.role) subtitle = `Non-Teaching • Role: ${user.role}`;
-      ctx.fillText(subtitle, canvas.width / 2, 415);
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText('Mother Mary Primary School Limited', W / 2, 55);
+
+      // Header: address
+      ctx.fillStyle = '#6b7280';
+      ctx.font = 'bold 10px Inter, Arial, sans-serif';
+      ctx.fillText('P.O. Box 115301 Wakiso', W / 2, 74);
+
+      // Divider
+      ctx.strokeStyle = '#991b1b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(70, 88);
+      ctx.lineTo(W - 70, 88);
+      ctx.stroke();
+
+      // Photo circle
+      const pcx = W / 2;
+      const pcy = 168;
+      const pr = 66;
+
+      if (photoImg) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(photoImg, pcx - pr, pcy - pr, pr * 2, pr * 2);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = '#e5e7eb';
+        ctx.beginPath();
+        ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Maroon ring around photo
+      ctx.strokeStyle = '#991b1b';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Name
+      ctx.fillStyle = '#111827';
+      ctx.font = 'bold 22px Inter, Arial, sans-serif';
+      let displayName = user.name || '';
+      if (displayName.length > 28) displayName = displayName.slice(0, 26) + '…';
+      ctx.fillText(displayName, W / 2, 275);
+
+      // Subtitle
+      ctx.fillStyle = '#6b7280';
+      ctx.font = 'bold 13px Inter, Arial, sans-serif';
+      let subtitle = user.category || '';
+      if (user.class) subtitle += ` • ${user.class}`;
+      if (user.role) subtitle += ` • ${user.role}`;
+      ctx.fillText(subtitle, W / 2, 300);
+
+      // QR frame + code
+      const qrBoxSize = 150;
+      const qrBoxX = (W - qrBoxSize) / 2;
+      const qrBoxY = 330;
+
+      ctx.fillStyle = '#f9fafb';
+      ctx.fillRect(qrBoxX - 8, qrBoxY - 8, qrBoxSize + 16, qrBoxSize + 16);
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(qrBoxX - 8, qrBoxY - 8, qrBoxSize + 16, qrBoxSize + 16);
+
+      ctx.drawImage(qrImg, qrBoxX, qrBoxY, qrBoxSize, qrBoxSize);
+
+      // Footer text
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = 'italic 10px Inter, Arial, sans-serif';
+      ctx.fillText('Scan this QR code to mark attendance', W / 2, 520);
+
+      // Bottom maroon accent line
+      ctx.strokeStyle = '#991b1b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(80, 548);
+      ctx.lineTo(W - 80, 548);
+      ctx.stroke();
+
+      // Bottom label
+      ctx.fillStyle = '#991b1b';
+      ctx.font = 'bold 9px Inter, Arial, sans-serif';
+      ctx.fillText('OFFICIAL SCHOOL ID', W / 2, 568);
+
+      // Trigger download
       const pngFile = canvas.toDataURL('image/png');
       const downloadLink = document.createElement('a');
-      downloadLink.download = `${user.name.replace(/\s+/g, '_')}_Badge.png`;
+      downloadLink.download = `${(user.name || 'Badge').replace(/\s+/g, '_')}_Badge.png`;
       downloadLink.href = pngFile;
       downloadLink.click();
-    };
-    img.src = 'data:image/svg+xml;base64,' + btoa(svgString);
+
+      URL.revokeObjectURL(svgUrl);
+    } catch (err) {
+      console.error('Badge download failed:', err);
+      alert('Could not generate the badge. Please try again.');
+    }
   };
 
   const filteredBadges = useMemo(() => {
@@ -1146,8 +1410,6 @@ function App() {
   }
 
   // ============ DUTY TEACHER ROUTE ============
-  // handleScan now returns a structured result so the duty scanner can show
-  // context-aware messages (arrival / departure / cooldown / already-departed).
   if (userRole === 'scanner_agent') {
     return (
       <DutyTeacherScanner
@@ -1804,6 +2066,29 @@ function App() {
             <div className="animated-pane" style={{ background: '#e5e7eb', padding: isMobile ? '16px' : '32px', borderRadius: '20px', border: '1px solid #d1d5db', maxWidth: '700px', margin: '0 auto', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
               <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#111827', marginBottom: '20px' }}>Register New {formatRegType(regType)}</h2>
               <form onSubmit={handleRegistration} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Photo (required) */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Photo (required)</label>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ width: '96px', height: '96px', borderRadius: '50%', overflow: 'hidden', border: '3px solid #991b1b', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {photoBusy ? (
+                        <span style={{ fontSize: '11px', fontWeight: '900', color: '#4b5563', textAlign: 'center' }}>Processing…</span>
+                      ) : photoInput ? (
+                        <img src={photoInput} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <span style={{ fontSize: '36px', opacity: 0.4 }}>📷</span>
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <input type="file" accept="image/*" onChange={handlePhotoChange} style={{ padding: '8px', borderRadius: '8px', border: '1px solid #9ca3af', background: '#f3f4f6', fontSize: '12px', fontWeight: '700', width: '100%', boxSizing: 'border-box' }} />
+                      {photoInput && (
+                        <button type="button" onClick={() => setPhotoInput('')} style={{ alignSelf: 'flex-start', padding: '6px 12px', background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '11px', fontWeight: '900', cursor: 'pointer' }}>Remove Photo</button>
+                      )}
+                    </div>
+                  </div>
+                  <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#4b5563', fontWeight: '700' }}>On mobile, you can take a photo directly or pick from gallery. Image is auto-compressed.</p>
+                </div>
+
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Full Name</label>
                   <input type="text" placeholder="Enter full name..." value={nameInput} onChange={(e) => setNameInput(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', boxSizing: 'border-box', fontWeight: '700', background: '#f3f4f6' }} />
@@ -1871,16 +2156,29 @@ function App() {
               <div className="badge-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
                 {filteredBadges.map((user) => (
                   <div key={user.id} className="pop-card" style={{ background: '#f3f4f6', padding: '20px', borderRadius: '16px', border: '2px solid #991b1b', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                    <h3 style={{ margin: '0 0 4px 0', fontSize: '16px', fontWeight: '900', color: '#991b1b' }}>Mother Mary Primary School Limited</h3>
-                    <p style={{ margin: '0 0 16px 0', fontSize: '11px', color: '#4b5563', fontWeight: '700' }}>P.O. Box 115301 Wakiso</p>
-                    <div style={{ background: '#e5e7eb', padding: '10px', border: '1px solid #d1d5db', borderRadius: '8px', marginBottom: '14px' }}>
+                    {/* Circular photo */}
+                    <div style={{ width: '96px', height: '96px', borderRadius: '50%', overflow: 'hidden', border: '4px solid #991b1b', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px', flexShrink: 0 }}>
+                      {user.photo ? (
+                        <img src={user.photo} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <span style={{ fontSize: '30px', fontWeight: '900', color: '#991b1b' }}>
+                          {(user.name || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '900', color: '#991b1b' }}>Mother Mary Primary School Limited</h3>
+                    <p style={{ margin: '0 0 12px 0', fontSize: '10px', color: '#4b5563', fontWeight: '700' }}>P.O. Box 115301 Wakiso</p>
+                    <div style={{ background: '#e5e7eb', padding: '10px', border: '1px solid #d1d5db', borderRadius: '8px', marginBottom: '12px' }}>
                       <QRCode id={`qr-svg-${user.id}`} value={user.qrCodeData} size={80} level="H" />
                     </div>
                     <h4 style={{ margin: '0 0 4px 0', fontSize: '16px', fontWeight: '900', color: '#111827' }}>{user.name}</h4>
-                    <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#4b5563', fontWeight: '700' }}>{user.category} {user.class ? `• ${user.class}` : ''}</p>
-                    <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-                      <button onClick={() => downloadQRCode(user)} style={{ flex: 1, padding: '10px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '12px' }}>Download PNG</button>
-                      <button onClick={() => handleDeletePerson(user.id, user.category, user.name)} className="button-delete" style={{ padding: '10px 14px', background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '12px' }}>Delete</button>
+                    <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#4b5563', fontWeight: '700' }}>
+                      {user.category}{user.class ? ` • ${user.class}` : ''}{user.role ? ` • ${user.role}` : ''}
+                    </p>
+                    <div style={{ display: 'flex', gap: '6px', width: '100%' }}>
+                      <button onClick={() => downloadQRCode(user)} style={{ flex: 1, padding: '10px 6px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '11px' }}>⬇ Download</button>
+                      <button onClick={() => openEditModal(user)} style={{ flex: 1, padding: '10px 6px', background: '#f3f4f6', color: '#991b1b', border: '1px solid #991b1b', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '11px' }}>✎ Edit</button>
+                      <button onClick={() => handleDeletePerson(user.id, user.category, user.name)} className="button-delete" style={{ flex: 1, padding: '10px 6px', background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '11px' }}>🗑 Delete</button>
                     </div>
                   </div>
                 ))}
@@ -2012,6 +2310,120 @@ function App() {
                 </div>
               ) : <p style={{ marginTop: '12px', fontSize: '13px', color: '#4b5563' }}>No record for this date.</p>}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ EDIT PERSON MODAL ============ */}
+      {editingPerson && (
+        <div className="modal-overlay" onClick={() => setEditingPerson(null)}>
+          <div className="modal-content animated-pane" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#111827' }}>
+                ✎ Edit {editingPerson.category}
+              </h2>
+              <button onClick={() => setEditingPerson(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#4b5563', fontWeight: '900' }}>×</button>
+            </div>
+            <form onSubmit={handleEditSave} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Photo (required) */}
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Photo (required)</label>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ width: '96px', height: '96px', borderRadius: '50%', overflow: 'hidden', border: '3px solid #991b1b', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {editPhotoBusy ? (
+                      <span style={{ fontSize: '11px', fontWeight: '900', color: '#4b5563', textAlign: 'center' }}>Processing…</span>
+                    ) : editingPerson.photo ? (
+                      <img src={editingPerson.photo} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <span style={{ fontSize: '36px', opacity: 0.4 }}>📷</span>
+                    )}
+                  </div>
+                  <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <input type="file" accept="image/*" onChange={handleEditPhotoChange} style={{ padding: '8px', borderRadius: '8px', border: '1px solid #9ca3af', background: '#f3f4f6', fontSize: '12px', fontWeight: '700', width: '100%', boxSizing: 'border-box' }} />
+                    <p style={{ margin: 0, fontSize: '11px', color: '#4b5563', fontWeight: '700' }}>Choose a new file to replace the current photo.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Full Name</label>
+                <input
+                  type="text"
+                  value={editingPerson.name}
+                  onChange={(e) => setEditingPerson((prev) => (prev ? { ...prev, name: e.target.value } : prev))}
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }}
+                  required
+                />
+              </div>
+
+              {editingPerson.category === 'Pupil' && (
+                <>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Class</label>
+                    <select
+                      value={editingPerson.class}
+                      onChange={(e) => setEditingPerson((prev) => (prev ? { ...prev, class: e.target.value } : prev))}
+                      style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }}
+                    >
+                      {schoolClasses.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Sex</label>
+                    <select
+                      value={editingPerson.sex}
+                      onChange={(e) => setEditingPerson((prev) => (prev ? { ...prev, sex: e.target.value } : prev))}
+                      style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }}
+                    >
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Parent Tel</label>
+                    <input
+                      type="text"
+                      placeholder="0770000000"
+                      value={editingPerson.tel}
+                      onChange={(e) => setEditingPerson((prev) => (prev ? { ...prev, tel: e.target.value } : prev))}
+                      style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }}
+                    />
+                  </div>
+                </>
+              )}
+
+              {editingPerson.category === 'Non-Teaching' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Role</label>
+                  <select
+                    value={editingPerson.role}
+                    onChange={(e) => setEditingPerson((prev) => (prev ? { ...prev, role: e.target.value } : prev))}
+                    style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }}
+                  >
+                    <option value="Security">Security</option>
+                    <option value="Cook">Cook</option>
+                    <option value="Cleaner">Cleaner</option>
+                    <option value="Driver">Driver</option>
+                  </select>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingPerson(null)}
+                  style={{ padding: '12px 20px', background: '#d1d5db', color: '#1f2937', border: '1px solid #9ca3af', borderRadius: '10px', fontWeight: '900', cursor: 'pointer', fontSize: '13px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{ padding: '12px 24px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '900', cursor: 'pointer', fontSize: '13px' }}
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -37,29 +37,36 @@ const saveQueue = (q) => {
   }
 };
 
+// Hard debounce only prevents the scanner library from firing the SAME QR
+// multiple times per second while the badge is held up to the camera.
+// The real 20-second business cooldown lives in App.jsx's handleScan — we
+// deliberately let the call through so the server-side check can return
+// a proper "cooldown" reason and we can show the exact remaining seconds.
+const HARD_DEBOUNCE_MS = 2500;
+
 /**
  * DutyTeacherScanner
  * ------------------
- * A dedicated, battery-friendly attendance scanning interface for the
- * Teacher On Duty.
+ * Context-aware scanning interface for the Teacher On Duty.
  *
- * Features:
- *  - Verifies role against Firestore on mount
- *  - Manual camera pause/resume toggle (unmounts the video stream when paused)
- *  - Loads today's scans from Firestore on mount so refresh keeps the count
- *  - SHARED scan count — shows ALL scans for the day (single shared account)
- *  - OFFLINE QUEUE — failed scans are stored locally and auto-synced when back online
- *  - Recent Scans shows only the most recent 5
+ * Now shows the actual result of each scan:
+ *   ✓ Arrival  (Present / Late)
+ *   ✓ Departure (Departed)
+ *   ⏱ Cooldown (please wait Ns before scanning again)
+ *   🔒 Already Departed for today
+ *   ❓ Unknown QR / empty scan
+ *   ⚠️ Error
  */
 export default function DutyTeacherScanner({
-  onScan,      // (parsedQR, rawValue) => Promise<void> — called to save a scan
-  onLogout,    // called after sign-out
+  onScan,      // (parsedQR, rawValue) => Promise<{ ok, action, name, status, time, reason, remaining }>
+  onLogout,
 }) {
-  const [authState, setAuthState] = useState('checking'); // 'checking' | 'authorized' | 'denied'
+  const [authState, setAuthState] = useState('checking');
   const [profile, setProfile] = useState(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [scanLog, setScanLog] = useState([]);
   const [statusMessage, setStatusMessage] = useState('');
+  const [statusTone, setStatusTone] = useState('info'); // info | success | departed | warning | error
   const [scanCount, setScanCount] = useState(0);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -102,8 +109,7 @@ export default function DutyTeacherScanner({
     verifyRole();
   }, []);
 
-  // ---------- 2. Load ALL of today's scans from Firestore on mount ----------
-  // SHARED across all users of this account, so no per-user filter.
+  // ---------- 2. Load today's arrivals from Firestore on mount ----------
   const reloadTodayScans = async () => {
     setLoadingLogs(true);
     try {
@@ -125,10 +131,7 @@ export default function DutyTeacherScanner({
         };
       });
 
-      // Newest first
       records.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
-
-      // Only keep the most recent 5 for display
       setScanLog(records.slice(0, 5));
       setScanCount(records.length);
     } catch (err) {
@@ -156,7 +159,6 @@ export default function DutyTeacherScanner({
     };
   }, []);
 
-  // Flush queued scans whenever we come back online or on mount
   useEffect(() => {
     if (authState !== 'authorized') return;
     if (!isOnline) return;
@@ -184,7 +186,7 @@ export default function DutyTeacherScanner({
 
       if (synced > 0) {
         setStatusMessage(`✓ Synced ${synced} queued scan${synced > 1 ? 's' : ''} from offline.`);
-        // Refresh the log so the synced records show up properly
+        setStatusTone('success');
         reloadTodayScans();
       }
     };
@@ -192,82 +194,159 @@ export default function DutyTeacherScanner({
     flushQueue();
   }, [authState, isOnline]);
 
-  // ---------- 4. Scan Handler ----------
+  // ---------- 4. Interpret the structured reply from App.jsx ----------
+  const interpretScanReply = (reply, parsed, now) => {
+    const displayName = parsed?.name || reply?.name || 'Scan';
+
+    // No structured reply — assume success
+    if (!reply || typeof reply !== 'object') {
+      const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setStatusMessage(`✓ ${displayName} scanned at ${timeString}`);
+      setStatusTone('success');
+      setScanLog((prev) => [{
+        id: `local-${now}`,
+        name: displayName,
+        category: parsed?.type || '',
+        time: timeString,
+        status: 'Scanned',
+      }, ...prev].slice(0, 5));
+      setScanCount((c) => c + 1);
+      return;
+    }
+
+    if (reply.ok === true) {
+      const isArrival = reply.action === 'arrival';
+      const label = isArrival
+        ? (reply.status === 'Late' ? 'Late Arrival' : 'Present')
+        : 'Departed';
+      setStatusMessage(`✓ ${reply.name || displayName} — ${label} at ${reply.time}`);
+      setStatusTone(isArrival ? 'success' : 'departed');
+      setScanLog((prev) => [{
+        id: `local-${now}`,
+        name: reply.name || displayName,
+        category: reply.category || parsed?.type || '',
+        time: reply.time || '--',
+        status: label,
+      }, ...prev].slice(0, 5));
+      setScanCount((c) => c + 1);
+      return;
+    }
+
+    switch (reply.reason) {
+      case 'cooldown': {
+        const secs = reply.remaining || 20;
+        setStatusMessage(`⏱ ${reply.name || displayName} — please wait ${secs}s before scanning again`);
+        setStatusTone('warning');
+        return;
+      }
+      case 'already_departed': {
+        setStatusMessage(`🔒 ${reply.name || displayName} — Already Departed for today`);
+        setStatusTone('error');
+        setScanLog((prev) => [{
+          id: `local-${now}`,
+          name: reply.name || displayName,
+          category: parsed?.type || '',
+          time: reply.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: 'Already Departed',
+        }, ...prev].slice(0, 5));
+        return;
+      }
+      case 'unknown_qr': {
+        setStatusMessage(`❓ QR not recognized — ${reply.name || displayName} is not in the system`);
+        setStatusTone('error');
+        return;
+      }
+      case 'empty': {
+        setStatusMessage(`❓ Empty scan — please try again`);
+        setStatusTone('warning');
+        return;
+      }
+      case 'error': {
+        setStatusMessage(`⚠️ Scan error: ${reply.message || 'unknown error'}`);
+        setStatusTone('error');
+        return;
+      }
+      default: {
+        setStatusMessage(`⚠️ ${displayName} — scan could not be processed`);
+        setStatusTone('warning');
+        return;
+      }
+    }
+  };
+
+  // ---------- 5. Scan Handler ----------
   const handleScan = async (result) => {
     if (!result || !result[0]?.rawValue) return;
     const rawValue = result[0].rawValue;
 
-    // Cooldown per QR to avoid duplicate scans
+    // Hard debounce — the same QR held to the camera shouldn't fire repeatedly
     const now = Date.now();
     const last = lastScanTimeRef.current[rawValue];
-    if (last && now - last < 15000) return;
+    if (last && now - last < HARD_DEBOUNCE_MS) return;
     lastScanTimeRef.current[rawValue] = now;
 
-    let parsed = null;
+    let parsed;
     try {
       parsed = JSON.parse(rawValue);
     } catch {
       parsed = { name: rawValue, type: 'Unknown' };
     }
 
-    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const displayName = parsed?.name || rawValue;
 
-    // Add to the local display log immediately (most recent 5 only)
-    const localEntry = {
-      id: `local-${now}`,
-      name: parsed?.name || rawValue,
-      category: parsed?.type || 'Unknown',
-      time: timeString,
-      status: 'Present',
-    };
-    setScanLog((prev) => [localEntry, ...prev].slice(0, 5));
-    setScanCount((c) => c + 1);
+    // Immediate processing feedback
+    setStatusMessage(`⏳ Processing ${displayName}…`);
+    setStatusTone('info');
 
-    // Try to save via the parent handler; on failure or offline, queue it
-    const queueItem = { parsed, rawValue, timestamp: new Date().toISOString() };
+    // Offline — queue and inform
+    if (!navigator.onLine) {
+      const q = loadQueue();
+      q.push({ parsed, rawValue, timestamp: new Date().toISOString() });
+      saveQueue(q);
+      setPendingCount(q.length);
+      setStatusMessage(`📴 Offline — ${displayName} queued for sync`);
+      setStatusTone('warning');
+      return;
+    }
 
-    if (typeof onScanRef.current === 'function') {
-      if (!navigator.onLine) {
-        // Offline → queue
-        const q = loadQueue();
-        q.push(queueItem);
-        saveQueue(q);
-        setPendingCount(q.length);
-        setStatusMessage(`⏳ Offline — ${parsed?.name || 'scan'} queued for sync`);
-      } else {
-        try {
-          await onScanRef.current(parsed, rawValue);
-          setStatusMessage(`✓ ${parsed?.name || 'Scan'} logged at ${timeString}`);
-        } catch (err) {
-          console.error('Parent onScan error — queueing:', err);
-          const q = loadQueue();
-          q.push(queueItem);
-          saveQueue(q);
-          setPendingCount(q.length);
-          setStatusMessage(`⚠️ Saved locally — will retry when back online`);
-        }
-      }
-    } else {
-      // Standalone fallback: log to a `dutyScans` collection
+    // No parent handler — fallback log
+    if (typeof onScanRef.current !== 'function') {
       try {
+        const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         await addDoc(collection(db, 'dutyScans'), {
           agentUid: auth.currentUser?.uid || null,
           agentName: profile?.name || 'Teacher On Duty',
-          name: parsed?.name || rawValue,
+          name: displayName,
           category: parsed?.type || 'Unknown',
           timestamp: new Date().toISOString(),
           time: timeString,
         });
-        setStatusMessage(`✓ ${parsed?.name || 'Scan'} logged at ${timeString}`);
+        setStatusMessage(`✓ ${displayName} scanned at ${timeString}`);
+        setStatusTone('success');
       } catch (err) {
-        console.error('Fallback log error — queueing:', err);
-        const q = loadQueue();
-        q.push(queueItem);
-        saveQueue(q);
-        setPendingCount(q.length);
-        setStatusMessage(`⚠️ Saved locally — will retry when back online`);
+        console.error(err);
+        setStatusMessage(`⚠️ Could not log ${displayName}`);
+        setStatusTone('error');
       }
+      return;
     }
+
+    // Let App.jsx process it and return a structured reply
+    let reply;
+    try {
+      reply = await onScanRef.current(parsed, rawValue);
+    } catch (err) {
+      console.error('onScan error — queueing:', err);
+      const q = loadQueue();
+      q.push({ parsed, rawValue, timestamp: new Date().toISOString() });
+      saveQueue(q);
+      setPendingCount(q.length);
+      setStatusMessage(`⚠️ Connection issue — ${displayName} queued for retry`);
+      setStatusTone('warning');
+      return;
+    }
+
+    interpretScanReply(reply, parsed, now);
   };
 
   const handleLogout = async () => {
@@ -283,9 +362,35 @@ export default function DutyTeacherScanner({
   const toggleCamera = () => {
     setCameraOn((v) => {
       const next = !v;
-      setStatusMessage(next ? 'Camera ready — point at a QR badge.' : 'Camera paused.');
+      setStatusMessage(next ? '📷 Camera ready — point at a QR badge.' : 'Camera paused.');
+      setStatusTone('info');
       return next;
     });
+  };
+
+  // ---------- Tones ----------
+  const toneStyles = {
+    info:     { bg: '#e0f2fe', color: '#075985', border: '#7dd3fc' },
+    success:  { bg: '#dcfce7', color: '#166534', border: '#86efac' },
+    departed: { bg: '#dbeafe', color: '#1e40af', border: '#93c5fd' },
+    warning:  { bg: '#fef9c3', color: '#854d0e', border: '#fde68a' },
+    error:    { bg: '#fee2e2', color: '#991b1b', border: '#fecaca' },
+  };
+
+  const statusPillStyle = (status) => {
+    if (status === 'Late' || status === 'Late Arrival') {
+      return { background: '#fef9c3', color: '#854d0e', border: '1px solid #fde68a' };
+    }
+    if (status === 'Departed') {
+      return { background: '#dbeafe', color: '#1e40af', border: '1px solid #93c5fd' };
+    }
+    if (status === 'Already Departed') {
+      return { background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' };
+    }
+    if (status === 'Present' || status === 'Scanned') {
+      return { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' };
+    }
+    return { background: '#f1f5f9', color: '#4b5563', border: '1px solid #d1d5db' };
   };
 
   // ---------- UI: Checking ----------
@@ -319,7 +424,6 @@ export default function DutyTeacherScanner({
   // ---------- UI: Scanner Dashboard ----------
   return (
     <div style={styles.pageWrapper}>
-      {/* Header — subtitle removed, only the title remains */}
       <div style={styles.header}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 28 }}>🎓</span>
@@ -328,7 +432,6 @@ export default function DutyTeacherScanner({
         <button onClick={handleLogout} style={styles.logoutBtn}>Sign Out</button>
       </div>
 
-      {/* Connection + Pending Sync Banner */}
       {(!isOnline || pendingCount > 0) && (
         <div
           style={{
@@ -348,7 +451,6 @@ export default function DutyTeacherScanner({
         </div>
       )}
 
-      {/* Stats Strip */}
       <div style={styles.strip}>
         <div style={styles.stripItem}>
           <span style={styles.stripLabel}>Scans Today</span>
@@ -362,7 +464,6 @@ export default function DutyTeacherScanner({
         </div>
       </div>
 
-      {/* Manual Camera Toggle */}
       <div style={styles.toggleWrapper}>
         <button
           onClick={toggleCamera}
@@ -380,7 +481,6 @@ export default function DutyTeacherScanner({
         </p>
       </div>
 
-      {/* Scanner Area — only mounted when cameraOn is true (releases camera hardware) */}
       <div style={styles.scannerArea}>
         {cameraOn ? (
           <Scanner
@@ -398,12 +498,23 @@ export default function DutyTeacherScanner({
         )}
       </div>
 
-      {/* Status Message */}
       {statusMessage && (
-        <div style={styles.statusBar}>{statusMessage}</div>
+        <div
+          style={{
+            padding: '12px 14px',
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 800,
+            textAlign: 'center',
+            background: toneStyles[statusTone]?.bg || '#f3f4f6',
+            color: toneStyles[statusTone]?.color || '#111827',
+            border: `1px solid ${toneStyles[statusTone]?.border || '#d1d5db'}`,
+          }}
+        >
+          {statusMessage}
+        </div>
       )}
 
-      {/* Recent Scans — most recent 5 only */}
       <div style={styles.logPanel}>
         <h3 style={styles.logTitle}>Recent Scans</h3>
         {loadingLogs ? (
@@ -413,9 +524,15 @@ export default function DutyTeacherScanner({
         ) : (
           scanLog.map((entry, idx) => (
             <div key={entry.id || idx} style={styles.logRow}>
-              <span style={styles.logName}>{entry.name}</span>
-              <span style={styles.logCat}>{entry.category}</span>
-              <span style={styles.logTime}>{entry.time}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={styles.logName}>{entry.name}</div>
+                <div style={styles.logSub}>
+                  {entry.category} • {entry.time}
+                </div>
+              </div>
+              <span style={{ ...styles.logPill, ...statusPillStyle(entry.status) }}>
+                {entry.status}
+              </span>
             </div>
           ))
         )}
@@ -463,7 +580,6 @@ const styles = {
     color: 'white', padding: '16px 18px', borderRadius: 14, gap: 10, flexWrap: 'wrap',
   },
   headerTitle: { margin: 0, fontSize: 16, fontWeight: 900 },
-  headerSub: { margin: '2px 0 0 0', fontSize: 11, opacity: 0.85, fontWeight: 600 },
   logoutBtn: {
     padding: '8px 14px', background: 'rgba(255,255,255,0.15)', color: 'white',
     border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, fontWeight: 900,
@@ -495,11 +611,6 @@ const styles = {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     justifyContent: 'center', width: '100%', height: '100%', background: '#1f2937',
   },
-  statusBar: {
-    padding: '10px 14px', background: '#fef9c3', color: '#854d0e',
-    borderRadius: 10, fontSize: 12, fontWeight: 800, textAlign: 'center',
-    border: '1px solid #fde68a',
-  },
   logPanel: {
     background: '#faf9f7', padding: 14, borderRadius: 12, border: '1px solid #d1d5db',
   },
@@ -509,7 +620,13 @@ const styles = {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: '8px 0', borderBottom: '1px solid #e5e7eb', gap: 8,
   },
-  logName: { fontWeight: 900, fontSize: 13, flex: 1, color: '#111827' },
-  logCat: { fontSize: 11, color: '#4b5563', fontWeight: 700 },
-  logTime: { fontSize: 11, color: '#991b1b', fontWeight: 900 },
+  logName: {
+    fontWeight: 900, fontSize: 13, color: '#111827',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  logSub: { fontSize: 11, color: '#4b5563', fontWeight: 700, marginTop: 1 },
+  logPill: {
+    fontSize: 10, fontWeight: 900, padding: '3px 8px',
+    borderRadius: 6, whiteSpace: 'nowrap',
+  },
 };

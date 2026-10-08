@@ -34,28 +34,14 @@ const getEATDate = () => {
 // ============ SMS HELPERS ============
 const SMS_WORKER_URL = 'https://hidden-star-3e60.vihandreams.workers.dev/';
 
-// Normalize Ugandan phone numbers to +256XXXXXXXXX
-// Accepts: 0770000000, 256770000000, +256770000000, 770000000, spaces/dashes
 const normalizePhone = (raw) => {
   if (!raw) return null;
   const digits = String(raw).replace(/[^\d]/g, '');
   if (!digits) return null;
-  // 0770000000 → +256770000000
-  if (digits.length === 10 && digits.startsWith('0')) {
-    return '+256' + digits.slice(1);
-  }
-  // 770000000 → +256770000000
-  if (digits.length === 9) {
-    return '+256' + digits;
-  }
-  // 256770000000 → +256770000000
-  if (digits.length === 12 && digits.startsWith('256')) {
-    return '+' + digits;
-  }
-  // Already has a country code (11–15 digits)
-  if (digits.length >= 11 && digits.length <= 15) {
-    return '+' + digits;
-  }
+  if (digits.length === 10 && digits.startsWith('0')) return '+256' + digits.slice(1);
+  if (digits.length === 9) return '+256' + digits;
+  if (digits.length === 12 && digits.startsWith('256')) return '+' + digits;
+  if (digits.length >= 11 && digits.length <= 15) return '+' + digits;
   return null;
 };
 
@@ -69,8 +55,8 @@ const sendAttendanceSMS = async ({ phone, pupilName, type, time, date }) => {
     }
     const message =
       type === 'arrival'
-        ? `Mother Mary Primary School: ${pupilName} arrived at ${time} on ${date}.`
-        : `Mother Mary Primary School: ${pupilName} departed at ${time} on ${date}.`;
+        ? `Mother Mary Primary School: Dear Parent, your child ${pupilName} has arrived at school safely on ${date} at ${time}.`
+        : `Mother Mary Primary School: Dear Parent, your child ${pupilName} has departed from school on ${date} at ${time}.`;
 
     const res = await fetch(SMS_WORKER_URL, {
       method: 'POST',
@@ -160,7 +146,6 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch the user's role from Firestore `users/{uid}`
   useEffect(() => {
     if (!user) {
       setUserRole(null);
@@ -215,36 +200,7 @@ function App() {
     };
   }, []);
 
-  const [financeFees, setFinanceFees] = useState([]);
-  const [financePayments, setFinancePayments] = useState([]);
-  const [financeClassFees, setFinanceClassFees] = useState([]);
-
-  useEffect(() => {
-    const unsubFees = onSnapshot(collection(db, 'fees'), (snapshot) => {
-      setFinanceFees(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-    }, (error) => {
-      console.warn('Fees collection listener error:', error.message);
-    });
-    const unsubPayments = onSnapshot(collection(db, 'feePayments'), (snapshot) => {
-      setFinancePayments(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-    }, (error) => {
-      console.warn('FeePayments collection listener error:', error.message);
-    });
-    const unsubClassFees = onSnapshot(collection(db, 'classFees'), (snapshot) => {
-      setFinanceClassFees(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-    }, (error) => {
-      console.warn('ClassFees collection listener error:', error.message);
-    });
-    return () => {
-      unsubFees();
-      unsubPayments();
-      unsubClassFees();
-    };
-  }, []);
-
   // ============ resetDailyIfNeeded ============
-  // Protects students who already have an attendance record for today
-  // so that a re-run of the reset NEVER wipes their "Present" status.
   const resetDailyIfNeeded = async () => {
     try {
       const eatDate = getEATDate();
@@ -267,8 +223,6 @@ function App() {
         snapshot.docs.forEach((docSnap) => {
           const data = docSnap.data();
           if (data.category === 'Administrator') return;
-
-          // CRITICAL: Never wipe anyone who already has an attendance record for today
           if (data.attendanceHistory && data.attendanceHistory[eatDate]) return;
 
           updatePromises.push(
@@ -307,7 +261,6 @@ function App() {
   const today = getEATDate();
   const [selectedDate, setSelectedDate] = useState(today);
 
-  // ============ Date-aware helpers ============
   const getRecordForDate = (person, dateStr) => {
     const rec = person.attendanceHistory?.[dateStr];
     if (rec) {
@@ -357,17 +310,9 @@ function App() {
 
   const [arrivalDeadline, setArrivalDeadline] = useState('08:00');
 
-  // ============ Attendance Settings persistence ============
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsSaveMsg, setSettingsSaveMsg] = useState('');
 
-  // ============ Test SMS state ============
-  const [testSmsNumber, setTestSmsNumber] = useState('');
-  const [testSmsSending, setTestSmsSending] = useState(false);
-  const [testSmsResult, setTestSmsResult] = useState('');
-
-  // Load saved attendance settings from Firestore on login
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -384,8 +329,6 @@ function App() {
         }
       } catch (err) {
         console.error('Failed to load attendance settings:', err);
-      } finally {
-        setSettingsLoaded(true);
       }
     })();
   }, [user]);
@@ -411,43 +354,10 @@ function App() {
     }
   };
 
-  // ============ Test SMS handler ============
-  const handleTestSMS = async () => {
-    setTestSmsResult('');
-    const normalized = normalizePhone(testSmsNumber);
-    if (!normalized) {
-      setTestSmsResult('⚠️ Invalid phone number. Use format 0770000000 or +256770000000.');
-      return;
-    }
-    setTestSmsSending(true);
-    try {
-      const res = await fetch(SMS_WORKER_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipient: normalized,
-          message: 'Mother Mary Primary School: This is a test SMS from your school system.',
-          sender_id: 'WizaSMS',
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setTestSmsResult(`⚠️ Failed: ${data.message || data.error || `HTTP ${res.status}`}`);
-      } else {
-        setTestSmsResult(`✓ Sent to ${normalized}`);
-      }
-    } catch (err) {
-      setTestSmsResult(`⚠️ Network error: ${err.message}`);
-    } finally {
-      setTestSmsSending(false);
-    }
-  };
-
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState(null);
   const [historyModal, setHistoryModal] = useState(null);
   const [historyDate, setHistoryDate] = useState(today);
   const [modalCategory, setModalCategory] = useState(null);
-  const [selectedPersonForAction, setSelectedPersonForAction] = useState(null);
 
   const [scanLog, setScanLog] = useState([]);
   const lastScanTimeRef = useRef({});
@@ -482,19 +392,6 @@ function App() {
   const [manualEntryStatus, setManualEntryStatus] = useState('');
   const [manualEntrySelectedPerson, setManualEntrySelectedPerson] = useState(null);
   const [manualSuggestions, setManualSuggestions] = useState([]);
-
-  const [financeYear, setFinanceYear] = useState('2026');
-  const [financeTerm, setFinanceTerm] = useState('Term 3');
-  const [financeSubTab, setFinanceSubTab] = useState('overview');
-  const [selectedFinanceClass, setSelectedFinanceClass] = useState('P.2');
-  const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
-  const [paymentStudentId, setPaymentStudentId] = useState('');
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('Cash');
-  const [financeStudentSearch, setFinanceStudentSearch] = useState('');
-  const [financeYearOptions] = useState(['2024', '2025', '2026', '2027', '2028']);
-  const [financeTermOptions] = useState(['Term 1', 'Term 2', 'Term 3']);
-  const [paymentHistoryStudent, setPaymentHistoryStudent] = useState(null);
 
   useEffect(() => {
     const handleMouseMove = (e) => {
@@ -544,15 +441,19 @@ function App() {
   };
 
   const handleScan = async (result) => {
-    if (!result || !result[0]?.rawValue) return;
+    if (!result || !result[0]?.rawValue) return { ok: false, reason: 'empty' };
     try {
       const parsed = JSON.parse(result[0].rawValue);
       const matchingPerson = allUsers.find(
         (u) => u.name === parsed.name && u.category === parsed.type
       );
-      if (!matchingPerson) return;
+      if (!matchingPerson) return { ok: false, reason: 'unknown_qr', name: parsed.name };
       const personKey = `${matchingPerson.category}-${matchingPerson.id}`;
-      if (isWithinCooldown(personKey)) return;
+      if (isWithinCooldown(personKey)) {
+        const elapsed = Date.now() - lastScanTimeRef.current[personKey];
+        const remaining = Math.max(1, Math.ceil((20000 - elapsed) / 1000));
+        return { ok: false, reason: 'cooldown', name: matchingPerson.name, remaining };
+      }
       lastScanTimeRef.current[personKey] = Date.now();
 
       const now = new Date();
@@ -565,9 +466,11 @@ function App() {
       else if (matchingPerson.category === 'Teacher') collectionName = 'teachers';
       else if (matchingPerson.category === 'Non-Teaching') collectionName = 'nonTeaching';
 
+      if (!collectionName) return { ok: false, reason: 'invalid_category', name: matchingPerson.name };
+
       const docRef = doc(db, collectionName, matchingPerson.id);
       const docSnap = await getDoc(docRef);
-      if (!docSnap.exists()) return;
+      if (!docSnap.exists()) return { ok: false, reason: 'not_found', name: matchingPerson.name };
 
       const person = docSnap.data();
       let action = null;
@@ -620,15 +523,12 @@ function App() {
           { name: person.name, category: person.category, time: timeString, status: 'Already Departed for Today' },
           ...prev,
         ].slice(0, 10));
-        return;
+        return { ok: false, reason: 'already_departed', name: person.name, time: timeString };
       }
 
       await updateDoc(docRef, updatedPerson);
 
       // ============ SMS Notification (fire-and-forget) ============
-      // Only Pupils with a valid parentTel get SMS. Duplicate prevention is
-      // implicit: arrival fires only on Absent→Present, departure only on
-      // Present→Departed. Failure never blocks or reverts the scan.
       if (
         person.category === 'Pupil' &&
         person.parentTel &&
@@ -640,7 +540,6 @@ function App() {
           month: 'short',
           year: 'numeric',
         });
-        // Intentionally NOT awaited — attendance save already completed.
         sendAttendanceSMS({
           phone: person.parentTel,
           pupilName: person.name,
@@ -655,8 +554,18 @@ function App() {
         { name: person.name, category: person.category, time: timeString, status: logStatus },
         ...prev,
       ].slice(0, 10));
+
+      return {
+        ok: true,
+        action,
+        name: person.name,
+        category: person.category,
+        status: logStatus,
+        time: timeString,
+      };
     } catch (e) {
       console.error('Scan error:', e);
+      return { ok: false, reason: 'error', message: e.message };
     }
   };
 
@@ -720,6 +629,7 @@ function App() {
     }
   };
 
+  // ============ MARK PRESENT (alternate flow) — with SMS trigger ============
   const handleManualMarkPresent = async (personId, category, tag) => {
     const now = new Date();
     const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -733,6 +643,11 @@ function App() {
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const person = docSnap.data();
+
+      const existingRec = person.attendanceHistory?.[dateKey];
+      const wasAlreadyPresent = existingRec &&
+        (existingRec.morningStatus === 'Present' || existingRec.morningStatus === 'Late');
+
       const updatedPerson = {
         ...person,
         status: 'Present',
@@ -746,9 +661,30 @@ function App() {
         },
       };
       await updateDoc(docRef, updatedPerson);
+
+      if (
+        !wasAlreadyPresent &&
+        person.category === 'Pupil' &&
+        person.parentTel &&
+        String(person.parentTel).trim()
+      ) {
+        const smsDate = new Date(dateKey + 'T00:00:00').toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        });
+        sendAttendanceSMS({
+          phone: person.parentTel,
+          pupilName: person.name,
+          type: 'arrival',
+          time: timeString,
+          date: smsDate,
+        }).catch((err) => console.error('[SMS] unhandled:', err));
+      }
     }
   };
 
+  // ============ MANUAL ENTRY MODAL SUBMIT — with SMS trigger ============
   const handleManualSubmit = async (e) => {
     e.preventDefault();
     if (!manualEntryName.trim() || !manualEntryStatus) {
@@ -793,6 +729,11 @@ function App() {
       }
 
       const existing = docSnap.data();
+
+      const existingRec = existing.attendanceHistory?.[dateKey];
+      const wasAlreadyPresent = existingRec &&
+        (existingRec.morningStatus === 'Present' || existingRec.morningStatus === 'Late');
+
       const updatedPerson = {
         ...existing,
         status: 'Present',
@@ -826,6 +767,26 @@ function App() {
         scannedByName: auth.currentUser?.email || 'Unknown',
         source: userRole === 'scanner_agent' ? 'duty_scanner' : 'admin_scanner',
       });
+
+      if (
+        !wasAlreadyPresent &&
+        existing.category === 'Pupil' &&
+        existing.parentTel &&
+        String(existing.parentTel).trim()
+      ) {
+        const smsDate = new Date(dateKey + 'T00:00:00').toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        });
+        sendAttendanceSMS({
+          phone: existing.parentTel,
+          pupilName: existing.name,
+          type: 'arrival',
+          time: timeString,
+          date: smsDate,
+        }).catch((err) => console.error('[SMS] unhandled:', err));
+      }
 
       setManualEntryName('');
       setManualEntryStatus('');
@@ -1172,220 +1133,6 @@ function App() {
     setOpenDropdown(openDropdown === menu ? null : menu);
   };
 
-  // ============ FINANCE HELPERS ============
-  const formatUGX = (amount) => {
-    const n = Number(amount) || 0;
-    return n.toLocaleString('en-UG');
-  };
-
-  const getClassDefaultFee = (cls) => {
-    const rec = financeClassFees.find(
-      (f) => f.class === cls && String(f.year) === String(financeYear) && f.term === financeTerm
-    );
-    return rec ? Number(rec.defaultAmount) || 0 : 0;
-  };
-
-  const getExpectedFee = (studentId) => {
-    const rec = financeFees.find(
-      (f) => f.studentId === studentId && String(f.year) === String(financeYear) && f.term === financeTerm
-    );
-    if (rec) return Number(rec.expectedAmount) || 0;
-    const student = pupilsForFinance.find((p) => p.id === studentId);
-    if (student && student.class) {
-      return getClassDefaultFee(student.class);
-    }
-    return 0;
-  };
-
-  const getClearedAmount = (studentId) => {
-    return financePayments
-      .filter(
-        (p) => p.studentId === studentId && String(p.year) === String(financeYear) && p.term === financeTerm
-      )
-      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-  };
-
-  const getFeeStatus = (expected, cleared) => {
-    if (expected <= 0) return 'Not Set';
-    if (cleared >= expected) return 'Fully Paid';
-    if (cleared > 0) return 'Balance';
-    return 'Default';
-  };
-
-  const statusBadgeStyle = (status) => {
-    switch (status) {
-      case 'Fully Paid':
-        return { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' };
-      case 'Balance':
-        return { background: '#fef9c3', color: '#854d0e', border: '1px solid #fde68a' };
-      case 'Default':
-        return { background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' };
-      default:
-        return { background: '#e5e7eb', color: '#4b5563', border: '1px solid #cbd5e1' };
-    }
-  };
-
-  const pupilsForFinance = useMemo(() => {
-    return pupils
-      .filter((p) => p.category === 'Pupil' || p.class)
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [pupils]);
-
-  const financeClassStudents = useMemo(() => {
-    return pupilsForFinance.filter((p) => p.class === selectedFinanceClass);
-  }, [pupilsForFinance, selectedFinanceClass]);
-
-  const filteredFinanceClassStudents = useMemo(() => {
-    if (!financeStudentSearch.trim()) return financeClassStudents;
-    const q = financeStudentSearch.toLowerCase();
-    return financeClassStudents.filter((s) => s.name.toLowerCase().includes(q));
-  }, [financeClassStudents, financeStudentSearch]);
-
-  const classFinanceSummary = (cls) => {
-    const list = pupilsForFinance.filter((p) => p.class === cls);
-    let expected = 0;
-    let cleared = 0;
-    list.forEach((s) => {
-      expected += getExpectedFee(s.id);
-      cleared += getClearedAmount(s.id);
-    });
-    return { expected, cleared, balance: Math.max(0, expected - cleared), count: list.length };
-  };
-
-  const globalFinanceSummary = useMemo(() => {
-    let expected = 0;
-    let cleared = 0;
-    pupilsForFinance.forEach((s) => {
-      expected += getExpectedFee(s.id);
-      cleared += getClearedAmount(s.id);
-    });
-    return { expected, cleared, balance: Math.max(0, expected - cleared) };
-  }, [pupilsForFinance, financeFees, financePayments, financeClassFees, financeYear, financeTerm]);
-
-  const selectedClassSummary = useMemo(() => {
-    return classFinanceSummary(selectedFinanceClass);
-  }, [pupilsForFinance, financeFees, financePayments, financeClassFees, financeYear, financeTerm, selectedFinanceClass]);
-
-  const handleSetExpectedFee = async (student) => {
-    const existing = financeFees.find(
-      (f) => f.studentId === student.id && String(f.year) === String(financeYear) && f.term === financeTerm
-    );
-    const current = existing ? Number(existing.expectedAmount) || 0 : getClassDefaultFee(student.class);
-    const input = window.prompt(
-      `Set expected fee for ${student.name}\n(${financeYear} • ${financeTerm}):`,
-      String(current)
-    );
-    if (input === null) return;
-    const amount = Number(input);
-    if (isNaN(amount) || amount < 0) {
-      alert('Please enter a valid amount.');
-      return;
-    }
-    try {
-      if (existing) {
-        await updateDoc(doc(db, 'fees', existing.id), { expectedAmount: amount });
-      } else {
-        await addDoc(collection(db, 'fees'), {
-          studentId: student.id,
-          studentName: student.name,
-          class: student.class,
-          year: financeYear,
-          term: financeTerm,
-          expectedAmount: amount,
-        });
-      }
-    } catch (err) {
-      console.error('Error setting fee:', err);
-      alert('Failed to save expected fee. Please try again.');
-    }
-  };
-
-  const handleSetClassFee = async (cls) => {
-    const existing = financeClassFees.find(
-      (f) => f.class === cls && String(f.year) === String(financeYear) && f.term === financeTerm
-    );
-    const current = existing ? Number(existing.defaultAmount) || 0 : 0;
-    const input = window.prompt(
-      `Set default school fees per child for ${cls}\n(${financeYear} • ${financeTerm}):\n\nAll students in this class without an individual fee override will use this amount.`,
-      String(current)
-    );
-    if (input === null) return;
-    const amount = Number(input);
-    if (isNaN(amount) || amount < 0) {
-      alert('Please enter a valid amount.');
-      return;
-    }
-    try {
-      if (existing) {
-        await updateDoc(doc(db, 'classFees', existing.id), { defaultAmount: amount });
-      } else {
-        await addDoc(collection(db, 'classFees'), {
-          class: cls,
-          year: financeYear,
-          term: financeTerm,
-          defaultAmount: amount,
-        });
-      }
-      alert(`Default fee for ${cls} set to UGX ${formatUGX(amount)} for ${financeYear} • ${financeTerm}.`);
-    } catch (err) {
-      console.error('Error setting class fee:', err);
-      alert('Failed to save class default fee. Please try again.');
-    }
-  };
-
-  const handleRecordPayment = async (e) => {
-    e.preventDefault();
-    if (!paymentStudentId) {
-      alert('Please select a student.');
-      return;
-    }
-    const student = pupilsForFinance.find((p) => p.id === paymentStudentId);
-    if (!student) {
-      alert('Student not found.');
-      return;
-    }
-    const amount = Number(paymentAmount);
-    if (!amount || amount <= 0) {
-      alert('Please enter a valid payment amount.');
-      return;
-    }
-
-    const now = new Date();
-    const receiptNo = `REC-${financeYear}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
-    const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
-
-    try {
-      await addDoc(collection(db, 'feePayments'), {
-        studentId: student.id,
-        studentName: student.name,
-        class: student.class,
-        year: financeYear,
-        term: financeTerm,
-        amount: amount,
-        method: paymentMethod,
-        receiptNo,
-        timestamp: now.toISOString(),
-        date: dateStr,
-      });
-      setShowRecordPaymentModal(false);
-      setPaymentAmount('');
-      setPaymentStudentId('');
-      setPaymentMethod('Cash');
-    } catch (err) {
-      console.error('Payment error:', err);
-      alert('Failed to record payment. Please try again.');
-    }
-  };
-
-  const openPaymentHistory = (student) => {
-    const payments = financePayments
-      .filter(
-        (p) => p.studentId === student.id && String(p.year) === String(financeYear) && p.term === financeTerm
-      )
-      .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
-    setPaymentHistoryStudent({ student, payments });
-  };
-
   if (authLoading || (user && roleLoading)) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#e2e8f0' }}>
@@ -1399,11 +1146,13 @@ function App() {
   }
 
   // ============ DUTY TEACHER ROUTE ============
+  // handleScan now returns a structured result so the duty scanner can show
+  // context-aware messages (arrival / departure / cooldown / already-departed).
   if (userRole === 'scanner_agent') {
     return (
       <DutyTeacherScanner
         onScan={async (parsed, rawValue) => {
-          await handleScan([{ rawValue }]);
+          return await handleScan([{ rawValue }]);
         }}
         onLogout={() => {}}
       />
@@ -1430,7 +1179,6 @@ function App() {
         ...(isMobile ? { left: 0 } : {}),
       }}
     >
-      {/* Scrollable top section: header + menu */}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: '6px', marginBottom: '14px' }}>
         <div style={{ marginBottom: '28px', paddingBottom: '18px', borderBottom: '2px solid #9ca3af' }}>
           <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#991b1b', lineHeight: '1.3' }}>
@@ -1479,21 +1227,6 @@ function App() {
             )}
           </div>
 
-          <button
-            onClick={() => { setActiveTab('finance'); setOpenDropdown(null); setMobileMenuOpen(false); }}
-            className="sidebar-main-btn pop-card"
-            style={{
-              width: '100%', padding: '15px 18px',
-              background: activeTab === 'finance' ? '#f3f4f6' : '#d1d5db',
-              border: activeTab === 'finance' ? '2px solid #991b1b' : '1px solid #9ca3af',
-              borderRadius: '12px', color: activeTab === 'finance' ? '#991b1b' : '#1f2937',
-              fontWeight: '900', cursor: 'pointer', fontSize: '14px', textAlign: 'left',
-              transform: activeTab === 'finance' ? 'translateX(4px)' : 'none',
-            }}
-          >
-            💰 Finance
-          </button>
-
           <button onClick={() => { setActiveTab('scanner'); setOpenDropdown(null); setMobileMenuOpen(false); }} className="sidebar-main-btn pop-card" style={{ width: '100%', padding: '15px 18px', background: activeTab === 'scanner' ? '#f3f4f6' : '#d1d5db', border: activeTab === 'scanner' ? '2px solid #991b1b' : '1px solid #9ca3af', borderRadius: '12px', color: activeTab === 'scanner' ? '#991b1b' : '#1f2937', fontWeight: '900', cursor: 'pointer', fontSize: '14px', textAlign: 'left', transform: activeTab === 'scanner' ? 'translateX(4px)' : 'none' }}>📷 Live QR Scanner</button>
 
           <div>
@@ -1502,9 +1235,9 @@ function App() {
               className="sidebar-main-btn pop-card"
               style={{
                 width: '100%', padding: '15px 18px',
-                background: activeTab === 'registration' || activeTab === 'ids' ? '#f3f4f6' : '#d1d5db',
-                border: activeTab === 'registration' || activeTab === 'ids' ? '2px solid #991b1b' : '1px solid #9ca3af',
-                borderRadius: '12px', color: activeTab === 'registration' || activeTab === 'ids' ? '#991b1b' : '#1f2937',
+                background: activeTab === 'registration' ? '#f3f4f6' : '#d1d5db',
+                border: activeTab === 'registration' ? '2px solid #991b1b' : '1px solid #9ca3af',
+                borderRadius: '12px', color: activeTab === 'registration' ? '#991b1b' : '#1f2937',
                 fontWeight: '900', cursor: 'pointer', fontSize: '14px',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               }}
@@ -1517,16 +1250,16 @@ function App() {
                 {['pupil', 'teacher', 'non-teaching'].map((type) => (
                   <button key={type} onClick={() => { setActiveTab('registration'); setRegType(type); setMobileMenuOpen(false); }} className="submenu-btn" style={{ padding: '11px 14px', background: regType === type && activeTab === 'registration' ? '#fee2e2' : '#e5e7eb', border: regType === type && activeTab === 'registration' ? '1px solid #fecaca' : '1px solid #9ca3af', borderRadius: '9px', fontSize: '13px', fontWeight: '900', color: regType === type && activeTab === 'registration' ? '#991b1b' : '#1f2937', cursor: 'pointer', textAlign: 'left' }}>+ Register {formatRegType(type)}</button>
                 ))}
-                <button onClick={() => { setActiveTab('ids'); setMobileMenuOpen(false); }} className="submenu-btn" style={{ padding: '11px 14px', background: activeTab === 'ids' ? '#fee2e2' : '#e5e7eb', border: activeTab === 'ids' ? '1px solid #fecaca' : '1px solid #9ca3af', borderRadius: '9px', fontSize: '13px', fontWeight: '900', color: activeTab === 'ids' ? '#991b1b' : '#1f2937', cursor: 'pointer', textAlign: 'left' }}>🖨️ QR Badges & IDs</button>
               </div>
             )}
           </div>
+
+          <button onClick={() => { setActiveTab('ids'); setOpenDropdown(null); setMobileMenuOpen(false); }} className="sidebar-main-btn pop-card" style={{ width: '100%', padding: '15px 18px', background: activeTab === 'ids' ? '#f3f4f6' : '#d1d5db', border: activeTab === 'ids' ? '2px solid #991b1b' : '1px solid #9ca3af', borderRadius: '12px', color: activeTab === 'ids' ? '#991b1b' : '#1f2937', fontWeight: '900', cursor: 'pointer', fontSize: '14px', textAlign: 'left', transform: activeTab === 'ids' ? 'translateX(4px)' : 'none' }}>🖨️ QR Badges &amp; IDs</button>
 
           <button onClick={() => { setActiveTab('calendar'); setOpenDropdown(null); setMobileMenuOpen(false); }} className="sidebar-main-btn pop-card" style={{ width: '100%', padding: '15px 18px', background: activeTab === 'calendar' ? '#f3f4f6' : '#d1d5db', border: activeTab === 'calendar' ? '2px solid #991b1b' : '1px solid #9ca3af', borderRadius: '12px', color: activeTab === 'calendar' ? '#991b1b' : '#1f2937', fontWeight: '900', cursor: 'pointer', fontSize: '14px', textAlign: 'left', transform: activeTab === 'calendar' ? 'translateX(4px)' : 'none' }}>🗓️ Calendar Settings</button>
         </div>
       </div>
 
-      {/* Fixed bottom: admin portal card */}
       <div style={{ flexShrink: 0, background: '#e5e7eb', border: '1px solid #9ca3af', padding: '14px', borderRadius: '12px' }} className="pop-card">
         <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#111827' }}>Admin Portal Active</p>
         <p style={{ margin: '3px 0 0 0', fontSize: '11px', color: '#16a34a', fontWeight: '900' }}>● System Secure</p>
@@ -1621,15 +1354,12 @@ function App() {
         input, select, textarea { border: 1px solid #9ca3af; background: #e5e7eb; }
         button { border: 1px solid #d1d5db; }
         .mobile-menu-btn { display: none; }
-        .finance-subtab { transition: all 0.2s ease; }
-        .finance-subtab:hover { background-color: #fee2e2 !important; border-color: #991b1b !important; color: #991b1b !important; }
-        /* Hide sidebar scrollbar but keep scrolling functional */
         aside > div:first-child {
-          scrollbar-width: none;        /* Firefox */
-          -ms-overflow-style: none;     /* IE / Edge */
+          scrollbar-width: none;
+          -ms-overflow-style: none;
         }
         aside > div:first-child::-webkit-scrollbar {
-          display: none;                /* Chrome / Safari */
+          display: none;
         }
         @media (max-width: 768px) {
           .mobile-menu-btn { display: block; }
@@ -1795,209 +1525,6 @@ function App() {
             </div>
           )}
 
-          {/* ==================== FINANCE TAB ==================== */}
-          {activeTab === 'finance' && (
-            <div className="animated-pane">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  <input
-                    list="finance-year-options"
-                    value={financeYear}
-                    onChange={(e) => setFinanceYear(e.target.value)}
-                    placeholder="Year"
-                    style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #9ca3af', fontWeight: '700', background: '#f3f4f6', width: '120px' }}
-                  />
-                  <datalist id="finance-year-options">
-                    {financeYearOptions.map((y) => <option key={y} value={y} />)}
-                  </datalist>
-                  <select value={financeTerm} onChange={(e) => setFinanceTerm(e.target.value)} style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #9ca3af', fontWeight: '700', background: '#f3f4f6' }}>
-                    {financeTermOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => setFinanceSubTab('overview')}
-                  className="finance-subtab"
-                  style={{
-                    padding: '14px 24px',
-                    background: financeSubTab === 'overview' ? '#991b1b' : '#f3f4f6',
-                    color: financeSubTab === 'overview' ? '#ffffff' : '#1f2937',
-                    border: financeSubTab === 'overview' ? '2px solid #7f1d1d' : '1px solid #9ca3af',
-                    borderRadius: '12px',
-                    fontWeight: '900',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  📊 General Overview
-                </button>
-                <button
-                  onClick={() => setFinanceSubTab('classes')}
-                  className="finance-subtab"
-                  style={{
-                    padding: '14px 24px',
-                    background: financeSubTab === 'classes' ? '#991b1b' : '#f3f4f6',
-                    color: financeSubTab === 'classes' ? '#ffffff' : '#1f2937',
-                    border: financeSubTab === 'classes' ? '2px solid #7f1d1d' : '1px solid #9ca3af',
-                    borderRadius: '12px',
-                    fontWeight: '900',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  🏫 Individual Classes
-                </button>
-              </div>
-
-              {financeSubTab === 'overview' && (
-                <div>
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '20px', marginBottom: '28px' }}>
-                    <div className="pop-card" style={cardContainerStyle}>
-                      <div style={cardTopAccentStyle}></div>
-                      <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#991b1b' }}>TOTAL EXPECTED</p>
-                      <h3 style={{ margin: '6px 0 0 0', fontSize: '24px', fontWeight: '900', color: '#111827' }}>UGX {formatUGX(globalFinanceSummary.expected)}</h3>
-                    </div>
-                    <div className="pop-card" style={cardContainerStyle}>
-                      <div style={cardTopAccentStyle}></div>
-                      <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#991b1b' }}>TOTAL CLEARED</p>
-                      <h3 style={{ margin: '6px 0 0 0', fontSize: '24px', fontWeight: '900', color: '#16a34a' }}>UGX {formatUGX(globalFinanceSummary.cleared)}</h3>
-                    </div>
-                    <div className="pop-card" style={cardContainerStyle}>
-                      <div style={cardTopAccentStyle}></div>
-                      <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#991b1b' }}>TOTAL BALANCE</p>
-                      <h3 style={{ margin: '6px 0 0 0', fontSize: '24px', fontWeight: '900', color: '#dc2626' }}>UGX {formatUGX(globalFinanceSummary.balance)}</h3>
-                    </div>
-                  </div>
-
-                  <div className="pop-card" style={{ background: '#e5e7eb', borderRadius: '12px', border: '1px solid #d1d5db', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '600px' }}>
-                      <thead>
-                        <tr style={{ background: '#991b1b', color: 'white' }}>
-                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Class Name</th>
-                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Students</th>
-                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Total Expected (UGX)</th>
-                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Total Cleared (UGX)</th>
-                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Balance (UGX)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {schoolClasses.map((cls, idx) => {
-                          const s = classFinanceSummary(cls);
-                          return (
-                            <tr key={cls} style={{ borderBottom: '1px solid #d1d5db', background: idx % 2 === 0 ? '#f3f4f6' : '#e5e7eb' }}>
-                              <td style={{ padding: '12px 16px', fontWeight: '900', color: '#111827' }}>{cls}</td>
-                              <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{s.count}</td>
-                              <td style={{ padding: '12px 16px', fontWeight: '700', color: '#111827' }}>{formatUGX(s.expected)}</td>
-                              <td style={{ padding: '12px 16px', fontWeight: '700', color: '#16a34a' }}>{formatUGX(s.cleared)}</td>
-                              <td style={{ padding: '12px 16px', fontWeight: '900', color: s.balance > 0 ? '#dc2626' : '#16a34a' }}>{formatUGX(s.balance)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {financeSubTab === 'classes' && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-                    <h3 style={{ fontSize: '14px', fontWeight: '900', color: '#4b5563', margin: 0 }}>Select Class:</h3>
-                    <button
-                      onClick={() => handleSetClassFee(selectedFinanceClass)}
-                      style={{ padding: '10px 16px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '900', cursor: 'pointer', fontSize: '12px' }}
-                    >
-                      ⚙️ Set Default Fee for {selectedFinanceClass}
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '24px' }}>
-                    {schoolClasses.map((cls) => {
-                      const isActive = selectedFinanceClass === cls;
-                      return (
-                        <button key={cls} onClick={() => setSelectedFinanceClass(cls)} className="pop-card" style={{ padding: '10px 18px', background: isActive ? '#991b1b' : '#f3f4f6', color: isActive ? '#ffffff' : '#1f2937', border: isActive ? '2px solid #7f1d1d' : '1px solid #d1d5db', borderRadius: '12px', fontWeight: '900', fontSize: '13px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>{cls}</button>
-                      );
-                    })}
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                    <div className="pop-card" style={cardContainerStyle}>
-                      <div style={cardTopAccentStyle}></div>
-                      <p style={{ margin: 0, fontSize: '12px', fontWeight: '900', color: '#991b1b' }}>EXPECTED ({selectedFinanceClass.toUpperCase()})</p>
-                      <h3 style={{ margin: '6px 0 0 0', fontSize: '22px', fontWeight: '900', color: '#111827' }}>UGX {formatUGX(selectedClassSummary.expected)}</h3>
-                    </div>
-                    <div className="pop-card" style={cardContainerStyle}>
-                      <div style={cardTopAccentStyle}></div>
-                      <p style={{ margin: 0, fontSize: '12px', fontWeight: '900', color: '#991b1b' }}>CLEARED ({selectedFinanceClass.toUpperCase()})</p>
-                      <h3 style={{ margin: '6px 0 0 0', fontSize: '22px', fontWeight: '900', color: '#16a34a' }}>UGX {formatUGX(selectedClassSummary.cleared)}</h3>
-                    </div>
-                    <div className="pop-card" style={cardContainerStyle}>
-                      <div style={cardTopAccentStyle}></div>
-                      <p style={{ margin: 0, fontSize: '12px', fontWeight: '900', color: '#991b1b' }}>BALANCE ({selectedFinanceClass.toUpperCase()})</p>
-                      <h3 style={{ margin: '6px 0 0 0', fontSize: '22px', fontWeight: '900', color: '#dc2626' }}>UGX {formatUGX(selectedClassSummary.balance)}</h3>
-                    </div>
-                  </div>
-
-                  <div style={{ position: 'relative', marginBottom: '20px' }}>
-                    <span style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px' }}>🔍</span>
-                    <input type="text" placeholder={`Search student in ${selectedFinanceClass}...`} value={financeStudentSearch} onChange={(e) => setFinanceStudentSearch(e.target.value)} style={{ width: '100%', padding: '14px 14px 14px 48px', borderRadius: '12px', border: '1px solid #d1d5db', background: '#f3f4f6', fontSize: '14px', fontWeight: '700', outline: 'none', boxSizing: 'border-box' }} />
-                  </div>
-
-                  <div className="pop-card" style={{ background: '#e5e7eb', borderRadius: '12px', border: '1px solid #d1d5db', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px', minWidth: '900px' }}>
-                      <thead>
-                        <tr style={{ background: '#991b1b', color: 'white' }}>
-                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Student Name</th>
-                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Expected Amount</th>
-                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Total Cleared</th>
-                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Balance</th>
-                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Status</th>
-                          <th style={{ padding: '12px 16px', fontWeight: '900' }}>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredFinanceClassStudents.length === 0 ? (
-                          <tr><td colSpan="6" style={{ padding: '30px', textAlign: 'center', color: '#4b5563', fontWeight: '700' }}>No students found in {selectedFinanceClass}.</td></tr>
-                        ) : (
-                          filteredFinanceClassStudents.map((student, idx) => {
-                            const expected = getExpectedFee(student.id);
-                            const cleared = getClearedAmount(student.id);
-                            const balance = Math.max(0, expected - cleared);
-                            const status = getFeeStatus(expected, cleared);
-                            const badge = statusBadgeStyle(status);
-                            return (
-                              <tr key={student.id} style={{ borderBottom: '1px solid #d1d5db', background: idx % 2 === 0 ? '#f3f4f6' : '#e5e7eb' }}>
-                                <td style={{ padding: '12px 16px', fontWeight: '900', color: '#111827' }}>{student.name}</td>
-                                <td style={{ padding: '12px 16px', fontWeight: '700', color: '#111827' }}>
-                                  {formatUGX(expected)}
-                                  <button onClick={() => handleSetExpectedFee(student)} title="Set individual expected fee" style={{ marginLeft: '8px', padding: '2px 6px', background: '#f3f4f6', border: '1px solid #9ca3af', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '900', color: '#4b5563' }}>✎</button>
-                                </td>
-                                <td style={{ padding: '12px 16px', fontWeight: '700', color: '#16a34a' }}>{formatUGX(cleared)}</td>
-                                <td style={{ padding: '12px 16px', fontWeight: '900', color: balance > 0 ? '#dc2626' : '#16a34a' }}>{formatUGX(balance)}</td>
-                                <td style={{ padding: '12px 16px' }}>
-                                  <span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '900', display: 'inline-block', ...badge }}>{status}</span>
-                                </td>
-                                <td style={{ padding: '12px 16px' }}>
-                                  <button onClick={() => { setPaymentStudentId(student.id); setShowRecordPaymentModal(true); }} style={{ padding: '6px 12px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '12px', marginRight: '6px' }}>💰 Add Payment</button>
-                                  <button onClick={() => openPaymentHistory(student)} style={{ padding: '6px 12px', background: '#f3f4f6', color: '#991b1b', border: '1px solid #991b1b', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '12px' }}>📜 History</button>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* CALENDAR SETTINGS TAB */}
           {activeTab === 'calendar' && (
             <div className="animated-pane" style={{ background: '#e5e7eb', padding: isMobile ? '16px' : '32px', borderRadius: '20px', border: '1px solid #d1d5db', maxWidth: '700px', margin: '0 auto', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
@@ -2033,51 +1560,6 @@ function App() {
                   </ul>
                 </div>
 
-                {/* ============ SMS TEST PANEL ============ */}
-                <div style={{ marginTop: '8px', paddingTop: '20px', borderTop: '2px solid #cbd5e1' }}>
-                  <h3 style={{ fontSize: '15px', fontWeight: '900', color: '#991b1b', margin: '0 0 4px 0' }}>📱 SMS Alerts</h3>
-                  <p style={{ fontSize: '12px', color: '#4b5563', fontWeight: '700', margin: '0 0 14px 0' }}>
-                    Parents are notified automatically by SMS when a pupil is scanned in or out. Use the test panel below to verify delivery.
-                  </p>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <input
-                      type="tel"
-                      placeholder="e.g. 0770000000 or +256770000000"
-                      value={testSmsNumber}
-                      onChange={(e) => setTestSmsNumber(e.target.value)}
-                      style={{ flex: 1, minWidth: '220px', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }}
-                    />
-                    <button
-                      onClick={handleTestSMS}
-                      disabled={testSmsSending || !testSmsNumber.trim()}
-                      style={{
-                        padding: '12px 22px',
-                        background: (testSmsSending || !testSmsNumber.trim()) ? '#7f1d1d' : '#991b1b',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '10px',
-                        fontWeight: '900',
-                        cursor: (testSmsSending || !testSmsNumber.trim()) ? 'not-allowed' : 'pointer',
-                        fontSize: '13px',
-                        opacity: (testSmsSending || !testSmsNumber.trim()) ? 0.7 : 1,
-                      }}
-                    >
-                      {testSmsSending ? 'Sending...' : 'Send Test SMS'}
-                    </button>
-                  </div>
-                  {testSmsResult && (
-                    <p style={{
-                      margin: '10px 0 0 0',
-                      fontSize: '13px',
-                      fontWeight: '900',
-                      color: testSmsResult.startsWith('✓') ? '#16a34a' : '#dc2626',
-                    }}>
-                      {testSmsResult}
-                    </p>
-                  )}
-                </div>
-
-                {/* Save Settings button */}
                 <div style={{ marginTop: '8px', paddingTop: '16px', borderTop: '2px solid #cbd5e1', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                   {settingsSaveMsg && (
                     <span style={{
@@ -2560,114 +2042,9 @@ function App() {
               <button onClick={() => setRegistrationSuccess(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#4b5563', fontWeight: '900' }}>×</button>
             </div>
             <p style={{ fontSize: '13px', color: '#4b5563', marginBottom: '16px', fontWeight: '700' }}>
-              {registrationSuccess} has been successfully registered. Their QR badge is now available in the QR Badges & IDs section.
+              {registrationSuccess} has been successfully registered. Their QR badge is now available in the QR Badges &amp; IDs section.
             </p>
             <button onClick={() => setRegistrationSuccess(null)} style={{ padding: '10px 20px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '900', cursor: 'pointer' }}>OK</button>
-          </div>
-        </div>
-      )}
-
-      {/* ============ RECORD PAYMENT MODAL ============ */}
-      {showRecordPaymentModal && (
-        <div className="modal-overlay" onClick={() => setShowRecordPaymentModal(false)}>
-          <div className="modal-content animated-pane" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#111827' }}>💰 Add Payment</h2>
-              <button onClick={() => setShowRecordPaymentModal(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#4b5563', fontWeight: '900' }}>×</button>
-            </div>
-            <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Student</label>
-                <select value={paymentStudentId} onChange={(e) => setPaymentStudentId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }} required>
-                  <option value="">-- Select a student --</option>
-                  {pupilsForFinance.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.class || '—'})</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Amount (UGX)</label>
-                <input type="number" min="0" step="1000" placeholder="e.g. 200000" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', boxSizing: 'border-box', background: '#f3f4f6' }} required />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Payment Method</label>
-                <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }}>
-                  <option value="Cash">Cash</option>
-                  <option value="Bank Deposit">Bank Deposit</option>
-                  <option value="Mobile Money - MTN">Mobile Money - MTN</option>
-                  <option value="Mobile Money - Airtel">Mobile Money - Airtel</option>
-                </select>
-              </div>
-              <div style={{ fontSize: '12px', color: '#4b5563', fontWeight: '700', background: '#e5e7eb', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                Session: <strong>{financeYear} • {financeTerm}</strong>
-              </div>
-              <button type="submit" style={{ padding: '14px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '900', cursor: 'pointer' }}>Save Payment</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ============ PAYMENT HISTORY MODAL ============ */}
-      {paymentHistoryStudent && (
-        <div className="modal-overlay" onClick={() => setPaymentHistoryStudent(null)}>
-          <div className="modal-content animated-pane" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#111827' }}>📜 Payment History</h2>
-                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#4b5563', fontWeight: '700' }}>
-                  {paymentHistoryStudent.student.name} • {paymentHistoryStudent.student.class || '—'} • {financeYear} • {financeTerm}
-                </p>
-              </div>
-              <button onClick={() => setPaymentHistoryStudent(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#4b5563', fontWeight: '900' }}>×</button>
-            </div>
-
-            {paymentHistoryStudent.payments.length === 0 ? (
-              <div style={{ background: '#faf9f7', borderRadius: '12px', padding: '30px', textAlign: 'center', border: '1px solid #d1d5db', color: '#4b5563', fontWeight: '700' }}>
-                No payments recorded for this student in {financeYear} • {financeTerm}.
-              </div>
-            ) : (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
-                  <div style={{ background: '#faf9f7', padding: '14px', borderRadius: '12px', border: '1px solid #d1d5db', textAlign: 'center', borderTop: '4px solid #991b1b' }}>
-                    <p style={{ margin: 0, fontSize: '11px', fontWeight: '900', color: '#4b5563' }}>INSTALLMENTS</p>
-                    <h3 style={{ margin: '6px 0 0 0', fontSize: '20px', fontWeight: '900', color: '#111827' }}>{paymentHistoryStudent.payments.length}</h3>
-                  </div>
-                  <div style={{ background: '#faf9f7', padding: '14px', borderRadius: '12px', border: '1px solid #d1d5db', textAlign: 'center', borderTop: '4px solid #16a34a' }}>
-                    <p style={{ margin: 0, fontSize: '11px', fontWeight: '900', color: '#4b5563' }}>TOTAL PAID</p>
-                    <h3 style={{ margin: '6px 0 0 0', fontSize: '20px', fontWeight: '900', color: '#16a34a' }}>{formatUGX(paymentHistoryStudent.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0))}</h3>
-                  </div>
-                  <div style={{ background: '#faf9f7', padding: '14px', borderRadius: '12px', border: '1px solid #d1d5db', textAlign: 'center', borderTop: '4px solid #dc2626' }}>
-                    <p style={{ margin: 0, fontSize: '11px', fontWeight: '900', color: '#4b5563' }}>BALANCE</p>
-                    <h3 style={{ margin: '6px 0 0 0', fontSize: '20px', fontWeight: '900', color: '#dc2626' }}>
-                      {formatUGX(Math.max(0, getExpectedFee(paymentHistoryStudent.student.id) - paymentHistoryStudent.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)))}
-                    </h3>
-                  </div>
-                </div>
-
-                <div className="pop-card" style={{ background: '#e5e7eb', borderRadius: '12px', border: '1px solid #d1d5db', overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
-                    <thead>
-                      <tr style={{ background: '#991b1b', color: 'white' }}>
-                        <th style={{ padding: '12px 16px', fontWeight: '900' }}>Date</th>
-                        <th style={{ padding: '12px 16px', fontWeight: '900' }}>Amount Paid (UGX)</th>
-                        <th style={{ padding: '12px 16px', fontWeight: '900' }}>Payment Method</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paymentHistoryStudent.payments.map((p, idx) => (
-                        <tr key={p.id} style={{ borderBottom: '1px solid #d1d5db', background: idx % 2 === 0 ? '#f3f4f6' : '#e5e7eb' }}>
-                          <td style={{ padding: '12px 16px', fontWeight: '700', color: '#4b5563' }}>{p.date}</td>
-                          <td style={{ padding: '12px 16px', fontWeight: '900', color: '#16a34a' }}>{formatUGX(p.amount)}</td>
-                          <td style={{ padding: '12px 16px', fontWeight: '700', color: '#111827' }}>{p.method}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
-                  <button onClick={() => setPaymentHistoryStudent(null)} style={{ padding: '10px 20px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '900', cursor: 'pointer' }}>Close</button>
-                </div>
-              </>
-            )}
           </div>
         </div>
       )}

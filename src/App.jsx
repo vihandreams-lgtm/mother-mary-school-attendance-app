@@ -244,8 +244,6 @@ function App() {
   const [selectedDate, setSelectedDate] = useState(today);
 
   // ============ Date-aware helpers ============
-  // Returns the effective attendance record for a person on a given date.
-  // Today = live values; past date = from attendanceHistory; no record = Absent.
   const getRecordForDate = (person, dateStr) => {
     const rec = person.attendanceHistory?.[dateStr];
     if (rec) {
@@ -272,7 +270,6 @@ function App() {
     };
   };
 
-  // Parse a time string like "07:45 AM" or "14:30" to minutes since midnight (for sorting)
   const timeToMinutes = (t) => {
     if (!t || t === '--') return Number.MAX_SAFE_INTEGER;
     const m = String(t).match(/(\d{1,2}):(\d{2})(?:\s*([AP]M))?/i);
@@ -295,6 +292,55 @@ function App() {
   const [newHolidayName, setNewHolidayName] = useState('');
 
   const [arrivalDeadline, setArrivalDeadline] = useState('08:00');
+
+  // ============ Attendance Settings persistence ============
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSaveMsg, setSettingsSaveMsg] = useState('');
+
+  // Load saved attendance settings from Firestore on login
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const ref = doc(db, 'settings', 'attendanceSettings');
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const d = snap.data();
+          if (d.termStartDate) setTermStartDate(d.termStartDate);
+          if (d.termEndDate) setTermEndDate(d.termEndDate);
+          if (d.arrivalDeadline) setArrivalDeadline(d.arrivalDeadline);
+          if (Array.isArray(d.publicHolidays)) setPublicHolidays(d.publicHolidays);
+          console.log('✓ Loaded attendance settings from Firestore');
+        }
+      } catch (err) {
+        console.error('Failed to load attendance settings:', err);
+      } finally {
+        setSettingsLoaded(true);
+      }
+    })();
+  }, [user]);
+
+  const handleSaveSettings = async () => {
+    setSettingsSaving(true);
+    setSettingsSaveMsg('');
+    try {
+      await setDoc(doc(db, 'settings', 'attendanceSettings'), {
+        termStartDate,
+        termEndDate,
+        arrivalDeadline,
+        publicHolidays,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      setSettingsSaveMsg('✓ Settings saved successfully');
+      setTimeout(() => setSettingsSaveMsg(''), 3000);
+    } catch (err) {
+      console.error('Save settings error:', err);
+      setSettingsSaveMsg('⚠️ Failed to save. Please try again.');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
 
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState(null);
   const [historyModal, setHistoryModal] = useState(null);
@@ -736,7 +782,6 @@ function App() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [allUsers, submittedSearch, idCategoryFilter, idClassFilter]);
 
-  // ============ Date-aware summary counts (Option 2: no record = Absent) ============
   const totalPupils = pupils.length;
   const presentPupils = pupils.filter((p) => {
     const r = getRecordForDate(p, selectedDate);
@@ -793,7 +838,6 @@ function App() {
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [pupils, teachers, nonTeaching, selectedDate, today]);
 
-  // ============ Dashboard table: sorted by arrival time (earliest first), tie-break by name ============
   const arrivedReport = dailyReport
     .filter(row => row.morningStatus === 'Present' || row.morningStatus === 'Late')
     .sort((a, b) => {
@@ -883,8 +927,7 @@ function App() {
       printWindow.print();
     }, 250);
   };
-  
-  // ============ Class metrics — date-aware ============
+
   const classPupils = pupils.filter((p) => p.class === selectedClassView);
   const totalInClass = classPupils.length;
   const presentInClass = classPupils.filter((p) => {
@@ -893,7 +936,6 @@ function App() {
   }).length;
   const absentInClass = totalInClass - presentInClass;
 
-  // ============ Directory table: alphabetical + date-aware filter ============
   const filteredClassPupils = classPupils
     .filter((p) => {
       const matchesSearch = p.name.toLowerCase().includes(studentSearchQuery.toLowerCase());
@@ -1249,7 +1291,6 @@ function App() {
         background: '#d1d5db',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
         padding: '28px 22px',
         boxSizing: 'border-box',
         height: '100vh',
@@ -1262,7 +1303,8 @@ function App() {
         ...(isMobile ? { left: 0 } : {}),
       }}
     >
-      <div>
+      {/* Scrollable top section: header + menu */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: '6px', marginBottom: '14px' }}>
         <div style={{ marginBottom: '28px', paddingBottom: '18px', borderBottom: '2px solid #9ca3af' }}>
           <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#991b1b', lineHeight: '1.3' }}>
             Mother Mary Primary School Limited
@@ -1310,7 +1352,6 @@ function App() {
             )}
           </div>
 
-          {/* ============ FINANCE moved up (right after Attendance Directory) ============ */}
           <button
             onClick={() => { setActiveTab('finance'); setOpenDropdown(null); setMobileMenuOpen(false); }}
             className="sidebar-main-btn pop-card"
@@ -1358,7 +1399,8 @@ function App() {
         </div>
       </div>
 
-      <div style={{ background: '#e5e7eb', border: '1px solid #9ca3af', padding: '14px', borderRadius: '12px' }} className="pop-card">
+      {/* Fixed bottom: admin portal card */}
+      <div style={{ flexShrink: 0, background: '#e5e7eb', border: '1px solid #9ca3af', padding: '14px', borderRadius: '12px' }} className="pop-card">
         <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#111827' }}>Admin Portal Active</p>
         <p style={{ margin: '3px 0 0 0', fontSize: '11px', color: '#16a34a', fontWeight: '900' }}>● System Secure</p>
         <p style={{ margin: '8px 0 0 0', fontSize: '11px', color: '#4b5563', fontWeight: '700' }}>Today: {formattedSelectedDate}</p>
@@ -1454,6 +1496,12 @@ function App() {
         .mobile-menu-btn { display: none; }
         .finance-subtab { transition: all 0.2s ease; }
         .finance-subtab:hover { background-color: #fee2e2 !important; border-color: #991b1b !important; color: #991b1b !important; }
+        /* Custom scrollbar for the sidebar menu */
+        .sidebar-main-btn + div::-webkit-scrollbar,
+        aside > div:first-child::-webkit-scrollbar { width: 8px; }
+        aside > div:first-child::-webkit-scrollbar-track { background: #cbd5e1; border-radius: 4px; }
+        aside > div:first-child::-webkit-scrollbar-thumb { background: #991b1b; border-radius: 4px; }
+        aside > div:first-child::-webkit-scrollbar-thumb:hover { background: #7f1d1d; }
         @media (max-width: 768px) {
           .mobile-menu-btn { display: block; }
           .resizer { display: none; }
@@ -1854,6 +1902,37 @@ function App() {
                       </li>
                     ))}
                   </ul>
+                </div>
+
+                {/* Save Settings button */}
+                <div style={{ marginTop: '8px', paddingTop: '16px', borderTop: '2px solid #cbd5e1', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  {settingsSaveMsg && (
+                    <span style={{
+                      fontSize: '13px',
+                      fontWeight: '900',
+                      color: settingsSaveMsg.startsWith('✓') ? '#16a34a' : '#dc2626',
+                    }}>
+                      {settingsSaveMsg}
+                    </span>
+                  )}
+                  <button
+                    onClick={handleSaveSettings}
+                    disabled={settingsSaving}
+                    style={{
+                      padding: '14px 28px',
+                      background: settingsSaving ? '#7f1d1d' : '#991b1b',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '10px',
+                      fontWeight: '900',
+                      cursor: settingsSaving ? 'not-allowed' : 'pointer',
+                      fontSize: '14px',
+                      opacity: settingsSaving ? 0.7 : 1,
+                      boxShadow: '0 4px 8px rgba(153,27,27,0.3)',
+                    }}
+                  >
+                    {settingsSaving ? '💾 Saving...' : '💾 Save Settings'}
+                  </button>
                 </div>
               </div>
             </div>

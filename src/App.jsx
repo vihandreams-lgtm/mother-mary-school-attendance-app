@@ -1496,12 +1496,14 @@ function App() {
         .mobile-menu-btn { display: none; }
         .finance-subtab { transition: all 0.2s ease; }
         .finance-subtab:hover { background-color: #fee2e2 !important; border-color: #991b1b !important; color: #991b1b !important; }
-        /* Custom scrollbar for the sidebar menu */
-        .sidebar-main-btn + div::-webkit-scrollbar,
-        aside > div:first-child::-webkit-scrollbar { width: 8px; }
-        aside > div:first-child::-webkit-scrollbar-track { background: #cbd5e1; border-radius: 4px; }
-        aside > div:first-child::-webkit-scrollbar-thumb { background: #991b1b; border-radius: 4px; }
-        aside > div:first-child::-webkit-scrollbar-thumb:hover { background: #7f1d1d; }
+        /* Hide sidebar scrollbar but keep scrolling functional */
+aside > div:first-child {
+  scrollbar-width: none;        /* Firefox */n
+  -ms-overflow-style: none;     /* IE / Edge */
+}
+aside > div:first-child::-webkit-scrollbar {
+  display: none;                /* Chrome / Safari */
+}
         @media (max-width: 768px) {
           .mobile-menu-btn { display: block; }
           .resizer { display: none; }

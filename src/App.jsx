@@ -31,6 +31,70 @@ const getEATDate = () => {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Kampala' }).format(new Date());
 };
 
+// ============ SMS HELPERS ============
+const SMS_WORKER_URL = 'https://hidden-star-3e60.vihandreams.workers.dev/';
+
+// Normalize Ugandan phone numbers to +256XXXXXXXXX
+// Accepts: 0770000000, 256770000000, +256770000000, 770000000, spaces/dashes
+const normalizePhone = (raw) => {
+  if (!raw) return null;
+  const digits = String(raw).replace(/[^\d]/g, '');
+  if (!digits) return null;
+  // 0770000000 → +256770000000
+  if (digits.length === 10 && digits.startsWith('0')) {
+    return '+256' + digits.slice(1);
+  }
+  // 770000000 → +256770000000
+  if (digits.length === 9) {
+    return '+256' + digits;
+  }
+  // 256770000000 → +256770000000
+  if (digits.length === 12 && digits.startsWith('256')) {
+    return '+' + digits;
+  }
+  // Already has a country code (11–15 digits)
+  if (digits.length >= 11 && digits.length <= 15) {
+    return '+' + digits;
+  }
+  return null;
+};
+
+// Fire-and-forget SMS sender. Never throws into the caller.
+const sendAttendanceSMS = async ({ phone, pupilName, type, time, date }) => {
+  try {
+    const normalized = normalizePhone(phone);
+    if (!normalized) {
+      console.warn('[SMS] Skipped — invalid phone number:', phone);
+      return { ok: false, error: 'invalid_phone' };
+    }
+    const message =
+      type === 'arrival'
+        ? `Mother Mary Primary School: ${pupilName} arrived at ${time} on ${date}.`
+        : `Mother Mary Primary School: ${pupilName} departed at ${time} on ${date}.`;
+
+    const res = await fetch(SMS_WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient: normalized,
+        message,
+        sender_id: 'WizaSMS',
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error('[SMS] Send failed:', res.status, data);
+      return { ok: false, error: data };
+    }
+    console.log(`[SMS] ${type} sent to ${normalized} for ${pupilName}`);
+    return { ok: true, data };
+  } catch (err) {
+    console.error('[SMS] Exception during send:', err);
+    return { ok: false, error: err.message };
+  }
+};
+
 function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -298,6 +362,11 @@ function App() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsSaveMsg, setSettingsSaveMsg] = useState('');
 
+  // ============ Test SMS state ============
+  const [testSmsNumber, setTestSmsNumber] = useState('');
+  const [testSmsSending, setTestSmsSending] = useState(false);
+  const [testSmsResult, setTestSmsResult] = useState('');
+
   // Load saved attendance settings from Firestore on login
   useEffect(() => {
     if (!user) return;
@@ -339,6 +408,38 @@ function App() {
       setSettingsSaveMsg('⚠️ Failed to save. Please try again.');
     } finally {
       setSettingsSaving(false);
+    }
+  };
+
+  // ============ Test SMS handler ============
+  const handleTestSMS = async () => {
+    setTestSmsResult('');
+    const normalized = normalizePhone(testSmsNumber);
+    if (!normalized) {
+      setTestSmsResult('⚠️ Invalid phone number. Use format 0770000000 or +256770000000.');
+      return;
+    }
+    setTestSmsSending(true);
+    try {
+      const res = await fetch(SMS_WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient: normalized,
+          message: 'Mother Mary Primary School: This is a test SMS from your school system.',
+          sender_id: 'WizaSMS',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setTestSmsResult(`⚠️ Failed: ${data.message || data.error || `HTTP ${res.status}`}`);
+      } else {
+        setTestSmsResult(`✓ Sent to ${normalized}`);
+      }
+    } catch (err) {
+      setTestSmsResult(`⚠️ Network error: ${err.message}`);
+    } finally {
+      setTestSmsSending(false);
     }
   };
 
@@ -523,6 +624,32 @@ function App() {
       }
 
       await updateDoc(docRef, updatedPerson);
+
+      // ============ SMS Notification (fire-and-forget) ============
+      // Only Pupils with a valid parentTel get SMS. Duplicate prevention is
+      // implicit: arrival fires only on Absent→Present, departure only on
+      // Present→Departed. Failure never blocks or reverts the scan.
+      if (
+        person.category === 'Pupil' &&
+        person.parentTel &&
+        String(person.parentTel).trim() &&
+        action
+      ) {
+        const smsDate = new Date(dateKey + 'T00:00:00').toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        });
+        // Intentionally NOT awaited — attendance save already completed.
+        sendAttendanceSMS({
+          phone: person.parentTel,
+          pupilName: person.name,
+          type: action,
+          time: timeString,
+          date: smsDate,
+        }).catch((err) => console.error('[SMS] unhandled:', err));
+      }
+
       const logStatus = action === 'arrival' ? morningStatus : 'Departed';
       setScanLog((prev) => [
         { name: person.name, category: person.category, time: timeString, status: logStatus },
@@ -1497,13 +1624,13 @@ function App() {
         .finance-subtab { transition: all 0.2s ease; }
         .finance-subtab:hover { background-color: #fee2e2 !important; border-color: #991b1b !important; color: #991b1b !important; }
         /* Hide sidebar scrollbar but keep scrolling functional */
-aside > div:first-child {
-  scrollbar-width: none;        /* Firefox */n
-  -ms-overflow-style: none;     /* IE / Edge */
-}
-aside > div:first-child::-webkit-scrollbar {
-  display: none;                /* Chrome / Safari */
-}
+        aside > div:first-child {
+          scrollbar-width: none;        /* Firefox */
+          -ms-overflow-style: none;     /* IE / Edge */
+        }
+        aside > div:first-child::-webkit-scrollbar {
+          display: none;                /* Chrome / Safari */
+        }
         @media (max-width: 768px) {
           .mobile-menu-btn { display: block; }
           .resizer { display: none; }
@@ -1904,6 +2031,50 @@ aside > div:first-child::-webkit-scrollbar {
                       </li>
                     ))}
                   </ul>
+                </div>
+
+                {/* ============ SMS TEST PANEL ============ */}
+                <div style={{ marginTop: '8px', paddingTop: '20px', borderTop: '2px solid #cbd5e1' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: '900', color: '#991b1b', margin: '0 0 4px 0' }}>📱 SMS Alerts</h3>
+                  <p style={{ fontSize: '12px', color: '#4b5563', fontWeight: '700', margin: '0 0 14px 0' }}>
+                    Parents are notified automatically by SMS when a pupil is scanned in or out. Use the test panel below to verify delivery.
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <input
+                      type="tel"
+                      placeholder="e.g. 0770000000 or +256770000000"
+                      value={testSmsNumber}
+                      onChange={(e) => setTestSmsNumber(e.target.value)}
+                      style={{ flex: 1, minWidth: '220px', padding: '12px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }}
+                    />
+                    <button
+                      onClick={handleTestSMS}
+                      disabled={testSmsSending || !testSmsNumber.trim()}
+                      style={{
+                        padding: '12px 22px',
+                        background: (testSmsSending || !testSmsNumber.trim()) ? '#7f1d1d' : '#991b1b',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '10px',
+                        fontWeight: '900',
+                        cursor: (testSmsSending || !testSmsNumber.trim()) ? 'not-allowed' : 'pointer',
+                        fontSize: '13px',
+                        opacity: (testSmsSending || !testSmsNumber.trim()) ? 0.7 : 1,
+                      }}
+                    >
+                      {testSmsSending ? 'Sending...' : 'Send Test SMS'}
+                    </button>
+                  </div>
+                  {testSmsResult && (
+                    <p style={{
+                      margin: '10px 0 0 0',
+                      fontSize: '13px',
+                      fontWeight: '900',
+                      color: testSmsResult.startsWith('✓') ? '#16a34a' : '#dc2626',
+                    }}>
+                      {testSmsResult}
+                    </p>
+                  )}
                 </div>
 
                 {/* Save Settings button */}

@@ -1164,6 +1164,7 @@ function App() {
       ctx.font = 'bold 13px Inter, Arial, sans-serif';
       let subtitle = user.category || '';
       if (user.class) subtitle += ` • ${user.class}`;
+      if (user.sex) subtitle += ` • ${user.sex}`;
       if (user.role) subtitle += ` • ${user.role}`;
       ctx.fillText(subtitle, W / 2, 300);
 
@@ -1217,6 +1218,25 @@ function App() {
       })
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [allUsers, submittedSearch, idCategoryFilter, idClassFilter]);
+
+  // ============ Count label for QR Badges filter bar ============
+  const badgesCountLabel = useMemo(() => {
+    const count = filteredBadges.length;
+    const plural = (n, word) => `${word}${n === 1 ? '' : 's'}`;
+    if (idCategoryFilter === 'Pupil') {
+      if (idClassFilter !== 'All') {
+        return `${idClassFilter}: ${count} ${plural(count, 'pupil')}`;
+      }
+      return `All Pupils: ${count}`;
+    }
+    if (idCategoryFilter === 'Teacher') {
+      return `Teaching Staff: ${count}`;
+    }
+    if (idCategoryFilter === 'Non-Teaching') {
+      return `Non-Teaching Staff: ${count}`;
+    }
+    return `All Badges: ${count}`;
+  }, [filteredBadges.length, idCategoryFilter, idClassFilter]);
 
   const totalPupils = pupils.length;
   const presentPupils = pupils.filter((p) => {
@@ -2232,7 +2252,7 @@ function App() {
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <select value={idCategoryFilter} onChange={(e) => { setIdCategoryFilter(e.target.value); if (e.target.value !== 'Pupil') setIdClassFilter('All'); }} style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #d1d5db', fontWeight: '700', background: '#f3f4f6' }}>
                   <option value="All">All Categories</option><option value="Pupil">Pupils</option><option value="Teacher">Teaching Staff</option><option value="Non-Teaching">Non-Teaching Staff</option>
                 </select>
@@ -2241,12 +2261,30 @@ function App() {
                     <option value="All">All Classes</option>{schoolClasses.map(cls => <option key={cls} value={cls}>{cls}</option>)}
                   </select>
                 )}
+                {/* Live count pill */}
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 18px',
+                  background: 'linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%)',
+                  color: 'white',
+                  borderRadius: '10px',
+                  fontWeight: '900',
+                  fontSize: '13px',
+                  boxShadow: '0 4px 10px rgba(153,27,27,0.25)',
+                  letterSpacing: '0.3px',
+                  whiteSpace: 'nowrap',
+                }}>
+                  <span style={{ fontSize: '15px' }}>📋</span>
+                  <span>{badgesCountLabel}</span>
+                </div>
               </div>
 
               <div className="badge-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
                 {filteredBadges.map((user) => (
                   <div key={user.id} className="pop-card" style={{ background: '#f3f4f6', padding: '20px', borderRadius: '16px', border: '2px solid #991b1b', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                    {/* Circular photo — bigger now */}
+                    {/* Circular photo */}
                     <div style={{ width: '120px', height: '120px', borderRadius: '50%', overflow: 'hidden', border: '4px solid #991b1b', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px', flexShrink: 0 }}>
                       {user.photo ? (
                         <img src={user.photo} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -2263,7 +2301,7 @@ function App() {
                     </div>
                     <h4 style={{ margin: '0 0 4px 0', fontSize: '16px', fontWeight: '900', color: '#111827' }}>{user.name}</h4>
                     <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#4b5563', fontWeight: '700' }}>
-                      {user.category}{user.class ? ` • ${user.class}` : ''}{user.role ? ` • ${user.role}` : ''}
+                      {user.category}{user.class ? ` • ${user.class}` : ''}{user.sex ? ` • ${user.sex}` : ''}{user.role ? ` • ${user.role}` : ''}
                     </p>
                     <div style={{ display: 'flex', gap: '6px', width: '100%' }}>
                       <button onClick={() => downloadQRCode(user)} style={{ flex: 1, padding: '10px 6px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize: '11px' }}>⬇ Download</button>

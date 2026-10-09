@@ -765,10 +765,6 @@ function App() {
       alert('Name cannot be empty.');
       return;
     }
-    if (!editingPerson.photo) {
-      alert('A photo is required. Please upload one.');
-      return;
-    }
 
     let collectionName = '';
     if (editingPerson.category === 'Pupil') collectionName = 'pupils';
@@ -817,10 +813,6 @@ function App() {
     e.preventDefault();
     if (!nameInput.trim()) {
       alert('Please enter a name!');
-      return;
-    }
-    if (!photoInput) {
-      alert('Please add a photo. A photo is required for every registration.');
       return;
     }
 
@@ -1145,6 +1137,15 @@ function App() {
         ctx.beginPath();
         ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
         ctx.fill();
+
+        // Draw initials for no-photo case
+        const initials = (user.name || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+        ctx.fillStyle = '#991b1b';
+        ctx.font = 'bold 40px Inter, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(initials, pcx, pcy + 2);
+        ctx.textBaseline = 'alphabetic';
       }
 
       ctx.strokeStyle = '#991b1b';
@@ -2149,9 +2150,9 @@ function App() {
             <div className="animated-pane" style={{ background: '#e5e7eb', padding: isMobile ? '16px' : '32px', borderRadius: '20px', border: '1px solid #d1d5db', maxWidth: '700px', margin: '0 auto', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
               <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#111827', marginBottom: '20px' }}>Register New {formatRegType(regType)}</h2>
               <form onSubmit={handleRegistration} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {/* Photo (required) */}
+                {/* Photo (optional) */}
                 <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Photo (required)</label>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Photo (optional)</label>
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <div style={{ width: '110px', height: '110px', borderRadius: '50%', overflow: 'hidden', border: '3px solid #991b1b', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       {photoBusy ? (
@@ -2175,7 +2176,7 @@ function App() {
                       </div>
                     </div>
                   </div>
-                  <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#4b5563', fontWeight: '700' }}>Take a photo with your camera or upload one from your device. Image is auto-compressed.</p>
+                  <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#4b5563', fontWeight: '700' }}>Take a photo now or add one later by clicking Edit on the QR Badges page.</p>
                 </div>
 
                 <div>
@@ -2414,9 +2415,9 @@ function App() {
               <button onClick={() => setEditingPerson(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#4b5563', fontWeight: '900' }}>×</button>
             </div>
             <form onSubmit={handleEditSave} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Photo (required) */}
+              {/* Photo (optional) */}
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Photo (required)</label>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Photo (optional)</label>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ width: '110px', height: '110px', borderRadius: '50%', overflow: 'hidden', border: '3px solid #991b1b', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     {editPhotoBusy ? (
@@ -2434,6 +2435,9 @@ function App() {
                         📁 Upload
                         <input type="file" accept="image/*" onChange={handleEditPhotoChange} style={{ display: 'none' }} />
                       </label>
+                      {editingPerson.photo && (
+                        <button type="button" onClick={() => setEditingPerson((prev) => (prev ? { ...prev, photo: '' } : prev))} style={{ padding: '10px 14px', background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '8px', fontSize: '12px', fontWeight: '900', cursor: 'pointer' }}>Remove</button>
+                      )}
                     </div>
                     <p style={{ margin: 0, fontSize: '11px', color: '#4b5563', fontWeight: '700' }}>Take a new photo or upload one to replace the current.</p>
                   </div>

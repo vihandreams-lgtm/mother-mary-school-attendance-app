@@ -32,8 +32,6 @@ const getEATDate = () => {
 };
 
 // ============ PHOTO HELPERS ============
-// Resize + compress an image file to a base64 JPEG data URL.
-// Keeps Firestore documents small (~30–50KB typical).
 const compressImage = (file, maxSize = 400, quality = 0.8) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -413,6 +411,14 @@ function App() {
   const [editingPerson, setEditingPerson] = useState(null);
   const [editPhotoBusy, setEditPhotoBusy] = useState(false);
 
+  // ============ WEBCAM STATE ============
+  const [webcamOpen, setWebcamOpen] = useState(false);
+  const [webcamBusy, setWebcamBusy] = useState(false);
+  const [webcamError, setWebcamError] = useState('');
+  const webcamVideoRef = useRef(null);
+  const webcamStreamRef = useRef(null);
+  const webcamTargetRef = useRef(null); // 'register' | 'edit'
+
   const schoolClasses = ["Baby Class", "Middle Class", "Top Class", "P.1", "P.2", "P.3", "P.4", "P.5", "P.6", "P.7"];
   const [selectedClassView, setSelectedClassView] = useState("P.2");
   const [studentSearchQuery, setStudentSearchQuery] = useState("");
@@ -640,6 +646,99 @@ function App() {
     } finally {
       setEditPhotoBusy(false);
       e.target.value = '';
+    }
+  };
+
+  // ============ WEBCAM HANDLERS ============
+  const openWebcam = (target) => {
+    webcamTargetRef.current = target;
+    setWebcamError('');
+    setWebcamBusy(false);
+    setWebcamOpen(true);
+  };
+
+  const closeWebcam = () => {
+    setWebcamOpen(false);
+  };
+
+  // Start camera when modal opens, stop when it closes
+  useEffect(() => {
+    if (!webcamOpen) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setWebcamError('Camera not supported in this browser.');
+          return;
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 720 }, height: { ideal: 720 } },
+          audio: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        webcamStreamRef.current = stream;
+        if (webcamVideoRef.current) {
+          webcamVideoRef.current.srcObject = stream;
+        }
+      } catch (err) {
+        console.error('Webcam error:', err);
+        setWebcamError('Could not access the camera. Please check browser permissions and try again.');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (webcamStreamRef.current) {
+        webcamStreamRef.current.getTracks().forEach((t) => t.stop());
+        webcamStreamRef.current = null;
+      }
+      if (webcamVideoRef.current) {
+        webcamVideoRef.current.srcObject = null;
+      }
+    };
+  }, [webcamOpen]);
+
+  const captureWebcam = async () => {
+    if (!webcamVideoRef.current) return;
+    setWebcamBusy(true);
+    try {
+      const video = webcamVideoRef.current;
+      const vw = video.videoWidth || 640;
+      const vh = video.videoHeight || 640;
+      const size = Math.min(vw, vh);
+
+      // Center-crop square from the video frame
+      const crop = document.createElement('canvas');
+      crop.width = size;
+      crop.height = size;
+      const cctx = crop.getContext('2d');
+      const sx = (vw - size) / 2;
+      const sy = (vh - size) / 2;
+      cctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
+
+      // Downscale to 400x400 and compress
+      const out = document.createElement('canvas');
+      out.width = 400;
+      out.height = 400;
+      const octx = out.getContext('2d');
+      octx.drawImage(crop, 0, 0, 400, 400);
+      const dataUrl = out.toDataURL('image/jpeg', 0.8);
+
+      if (webcamTargetRef.current === 'register') {
+        setPhotoInput(dataUrl);
+      } else if (webcamTargetRef.current === 'edit') {
+        setEditingPerson((prev) => (prev ? { ...prev, photo: dataUrl } : prev));
+      }
+      closeWebcam();
+    } catch (err) {
+      console.error('Capture failed:', err);
+      setWebcamError('Could not capture the photo. Please try again.');
+    } finally {
+      setWebcamBusy(false);
     }
   };
 
@@ -967,7 +1066,6 @@ function App() {
     setManualSuggestions([]);
   };
 
-  // ============ DOWNLOAD BADGE (with photo) ============
   const downloadQRCode = async (user) => {
     const svgElement = document.getElementById(`qr-svg-${user.id}`);
     if (!svgElement) return;
@@ -1002,33 +1100,27 @@ function App() {
       canvas.width = W;
       canvas.height = H;
 
-      // White background
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, W, H);
 
-      // Outer maroon border
       ctx.strokeStyle = '#991b1b';
       ctx.lineWidth = 6;
       ctx.strokeRect(12, 12, W - 24, H - 24);
 
-      // Thin inner decorative line
       ctx.strokeStyle = '#fecaca';
       ctx.lineWidth = 1;
       ctx.strokeRect(24, 24, W - 48, H - 48);
 
-      // Header: school name
       ctx.fillStyle = '#991b1b';
       ctx.font = 'bold 17px Inter, Arial, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
       ctx.fillText('Mother Mary Primary School Limited', W / 2, 55);
 
-      // Header: address
       ctx.fillStyle = '#6b7280';
       ctx.font = 'bold 10px Inter, Arial, sans-serif';
       ctx.fillText('P.O. Box 115301 Wakiso', W / 2, 74);
 
-      // Divider
       ctx.strokeStyle = '#991b1b';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -1036,7 +1128,6 @@ function App() {
       ctx.lineTo(W - 70, 88);
       ctx.stroke();
 
-      // Photo circle
       const pcx = W / 2;
       const pcy = 168;
       const pr = 66;
@@ -1056,21 +1147,18 @@ function App() {
         ctx.fill();
       }
 
-      // Maroon ring around photo
       ctx.strokeStyle = '#991b1b';
       ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Name
       ctx.fillStyle = '#111827';
       ctx.font = 'bold 22px Inter, Arial, sans-serif';
       let displayName = user.name || '';
       if (displayName.length > 28) displayName = displayName.slice(0, 26) + '…';
       ctx.fillText(displayName, W / 2, 275);
 
-      // Subtitle
       ctx.fillStyle = '#6b7280';
       ctx.font = 'bold 13px Inter, Arial, sans-serif';
       let subtitle = user.category || '';
@@ -1078,7 +1166,6 @@ function App() {
       if (user.role) subtitle += ` • ${user.role}`;
       ctx.fillText(subtitle, W / 2, 300);
 
-      // QR frame + code
       const qrBoxSize = 150;
       const qrBoxX = (W - qrBoxSize) / 2;
       const qrBoxY = 330;
@@ -1091,12 +1178,10 @@ function App() {
 
       ctx.drawImage(qrImg, qrBoxX, qrBoxY, qrBoxSize, qrBoxSize);
 
-      // Footer text
       ctx.fillStyle = '#9ca3af';
       ctx.font = 'italic 10px Inter, Arial, sans-serif';
       ctx.fillText('Scan this QR code to mark attendance', W / 2, 520);
 
-      // Bottom maroon accent line
       ctx.strokeStyle = '#991b1b';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -1104,12 +1189,10 @@ function App() {
       ctx.lineTo(W - 80, 548);
       ctx.stroke();
 
-      // Bottom label
       ctx.fillStyle = '#991b1b';
       ctx.font = 'bold 9px Inter, Arial, sans-serif';
       ctx.fillText('OFFICIAL SCHOOL ID', W / 2, 568);
 
-      // Trigger download
       const pngFile = canvas.toDataURL('image/png');
       const downloadLink = document.createElement('a');
       downloadLink.download = `${(user.name || 'Badge').replace(/\s+/g, '_')}_Badge.png`;
@@ -1645,7 +1728,7 @@ function App() {
             {isMobile && (
               <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} style={{ background: 'transparent', border: '1px solid white', color: 'white', fontSize: '24px', cursor: 'pointer', padding: '4px 10px', borderRadius: '6px' }}>☰</button>
             )}
-            <h1 style={{ margin: 0, fontSize: isMobile ? '18px' : '22px', fontWeight: '900' }}>School Management System</h1>
+            <h1 style={{ margin: 0, fontSize: isMobile ? '18px' : '22px', fontWeight: '900' }}>School Attendance Management System</h1>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '13px', fontWeight: '700', opacity: 0.9 }}>Select Date:</span>
@@ -2070,23 +2153,29 @@ function App() {
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Photo (required)</label>
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <div style={{ width: '96px', height: '96px', borderRadius: '50%', overflow: 'hidden', border: '3px solid #991b1b', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <div style={{ width: '110px', height: '110px', borderRadius: '50%', overflow: 'hidden', border: '3px solid #991b1b', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       {photoBusy ? (
                         <span style={{ fontSize: '11px', fontWeight: '900', color: '#4b5563', textAlign: 'center' }}>Processing…</span>
                       ) : photoInput ? (
                         <img src={photoInput} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (
-                        <span style={{ fontSize: '36px', opacity: 0.4 }}>📷</span>
+                        <span style={{ fontSize: '40px', opacity: 0.4 }}>📷</span>
                       )}
                     </div>
                     <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <input type="file" accept="image/*" onChange={handlePhotoChange} style={{ padding: '8px', borderRadius: '8px', border: '1px solid #9ca3af', background: '#f3f4f6', fontSize: '12px', fontWeight: '700', width: '100%', boxSizing: 'border-box' }} />
-                      {photoInput && (
-                        <button type="button" onClick={() => setPhotoInput('')} style={{ alignSelf: 'flex-start', padding: '6px 12px', background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '11px', fontWeight: '900', cursor: 'pointer' }}>Remove Photo</button>
-                      )}
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <button type="button" onClick={() => openWebcam('register')} style={{ padding: '10px 14px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '900', cursor: 'pointer' }}>📷 Take Photo</button>
+                        <label style={{ padding: '10px 14px', background: '#f3f4f6', color: '#991b1b', border: '1px solid #991b1b', borderRadius: '8px', fontSize: '12px', fontWeight: '900', cursor: 'pointer', display: 'inline-block' }}>
+                          📁 Upload
+                          <input type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
+                        </label>
+                        {photoInput && (
+                          <button type="button" onClick={() => setPhotoInput('')} style={{ padding: '10px 14px', background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '8px', fontSize: '12px', fontWeight: '900', cursor: 'pointer' }}>Remove</button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#4b5563', fontWeight: '700' }}>On mobile, you can take a photo directly or pick from gallery. Image is auto-compressed.</p>
+                  <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#4b5563', fontWeight: '700' }}>Take a photo with your camera or upload one from your device. Image is auto-compressed.</p>
                 </div>
 
                 <div>
@@ -2156,12 +2245,12 @@ function App() {
               <div className="badge-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
                 {filteredBadges.map((user) => (
                   <div key={user.id} className="pop-card" style={{ background: '#f3f4f6', padding: '20px', borderRadius: '16px', border: '2px solid #991b1b', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
-                    {/* Circular photo */}
-                    <div style={{ width: '96px', height: '96px', borderRadius: '50%', overflow: 'hidden', border: '4px solid #991b1b', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px', flexShrink: 0 }}>
+                    {/* Circular photo — bigger now */}
+                    <div style={{ width: '120px', height: '120px', borderRadius: '50%', overflow: 'hidden', border: '4px solid #991b1b', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px', flexShrink: 0 }}>
                       {user.photo ? (
                         <img src={user.photo} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (
-                        <span style={{ fontSize: '30px', fontWeight: '900', color: '#991b1b' }}>
+                        <span style={{ fontSize: '36px', fontWeight: '900', color: '#991b1b' }}>
                           {(user.name || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
                         </span>
                       )}
@@ -2169,7 +2258,7 @@ function App() {
                     <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '900', color: '#991b1b' }}>Mother Mary Primary School Limited</h3>
                     <p style={{ margin: '0 0 12px 0', fontSize: '10px', color: '#4b5563', fontWeight: '700' }}>P.O. Box 115301 Wakiso</p>
                     <div style={{ background: '#e5e7eb', padding: '10px', border: '1px solid #d1d5db', borderRadius: '8px', marginBottom: '12px' }}>
-                      <QRCode id={`qr-svg-${user.id}`} value={user.qrCodeData} size={80} level="H" />
+                      <QRCode id={`qr-svg-${user.id}`} value={user.qrCodeData} size={72} level="H" />
                     </div>
                     <h4 style={{ margin: '0 0 4px 0', fontSize: '16px', fontWeight: '900', color: '#111827' }}>{user.name}</h4>
                     <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#4b5563', fontWeight: '700' }}>
@@ -2329,18 +2418,24 @@ function App() {
               <div>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: '#4b5563', marginBottom: '6px' }}>Photo (required)</label>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div style={{ width: '96px', height: '96px', borderRadius: '50%', overflow: 'hidden', border: '3px solid #991b1b', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <div style={{ width: '110px', height: '110px', borderRadius: '50%', overflow: 'hidden', border: '3px solid #991b1b', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     {editPhotoBusy ? (
                       <span style={{ fontSize: '11px', fontWeight: '900', color: '#4b5563', textAlign: 'center' }}>Processing…</span>
                     ) : editingPerson.photo ? (
                       <img src={editingPerson.photo} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
-                      <span style={{ fontSize: '36px', opacity: 0.4 }}>📷</span>
+                      <span style={{ fontSize: '40px', opacity: 0.4 }}>📷</span>
                     )}
                   </div>
                   <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <input type="file" accept="image/*" onChange={handleEditPhotoChange} style={{ padding: '8px', borderRadius: '8px', border: '1px solid #9ca3af', background: '#f3f4f6', fontSize: '12px', fontWeight: '700', width: '100%', boxSizing: 'border-box' }} />
-                    <p style={{ margin: 0, fontSize: '11px', color: '#4b5563', fontWeight: '700' }}>Choose a new file to replace the current photo.</p>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <button type="button" onClick={() => openWebcam('edit')} style={{ padding: '10px 14px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '900', cursor: 'pointer' }}>📷 Take Photo</button>
+                      <label style={{ padding: '10px 14px', background: '#f3f4f6', color: '#991b1b', border: '1px solid #991b1b', borderRadius: '8px', fontSize: '12px', fontWeight: '900', cursor: 'pointer', display: 'inline-block' }}>
+                        📁 Upload
+                        <input type="file" accept="image/*" onChange={handleEditPhotoChange} style={{ display: 'none' }} />
+                      </label>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '11px', color: '#4b5563', fontWeight: '700' }}>Take a new photo or upload one to replace the current.</p>
                   </div>
                 </div>
               </div>
@@ -2424,6 +2519,67 @@ function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============ WEBCAM MODAL ============ */}
+      {webcamOpen && (
+        <div className="modal-overlay" onClick={closeWebcam}>
+          <div className="modal-content animated-pane" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#111827' }}>📷 Take Photo</h2>
+              <button onClick={closeWebcam} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#4b5563', fontWeight: '900' }}>×</button>
+            </div>
+
+            {webcamError ? (
+              <div style={{ padding: '16px', background: '#fee2e2', color: '#991b1b', borderRadius: '10px', fontWeight: '700', fontSize: '13px', marginBottom: '16px' }}>
+                {webcamError}
+              </div>
+            ) : (
+              <>
+                <div style={{ background: '#0f172a', borderRadius: '12px', overflow: 'hidden', aspectRatio: '1 / 1', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <video
+                    ref={webcamVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                </div>
+                <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#4b5563', fontWeight: '700', textAlign: 'center' }}>
+                  Point the camera at the subject, then tap Capture.
+                </p>
+              </>
+            )}
+
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={closeWebcam}
+                style={{ padding: '12px 20px', background: '#d1d5db', color: '#1f2937', border: '1px solid #9ca3af', borderRadius: '10px', fontWeight: '900', cursor: 'pointer', fontSize: '13px' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={captureWebcam}
+                disabled={webcamBusy || !!webcamError}
+                style={{
+                  padding: '12px 24px',
+                  background: (webcamBusy || webcamError) ? '#7f1d1d' : '#991b1b',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  fontWeight: '900',
+                  cursor: (webcamBusy || webcamError) ? 'not-allowed' : 'pointer',
+                  fontSize: '13px',
+                  opacity: (webcamBusy || webcamError) ? 0.6 : 1,
+                }}
+              >
+                {webcamBusy ? 'Capturing…' : '📸 Capture'}
+              </button>
+            </div>
           </div>
         </div>
       )}

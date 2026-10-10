@@ -1154,19 +1154,43 @@ function App() {
       ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
       ctx.stroke();
 
-      ctx.fillStyle = '#111827';
-      ctx.font = 'bold 22px Inter, Arial, sans-serif';
-      let displayName = user.name || '';
-      if (displayName.length > 28) displayName = displayName.slice(0, 26) + '…';
-      ctx.fillText(displayName, W / 2, 275);
-
-      ctx.fillStyle = '#6b7280';
-      ctx.font = 'bold 13px Inter, Arial, sans-serif';
-      let subtitle = user.category || '';
-      if (user.class) subtitle += ` • ${user.class}`;
-      if (user.sex) subtitle += ` • ${user.sex}`;
-      if (user.role) subtitle += ` • ${user.role}`;
-      ctx.fillText(subtitle, W / 2, 300);
+            // ===== Wrap the name onto multiple lines if too wide =====
+            ctx.fillStyle = '#111827';
+            ctx.font = 'bold 22px Inter, Arial, sans-serif';
+            const nameMaxWidth = W - 80;
+            const rawName = (user.name || '').trim();
+            const words = rawName.split(/\s+/).filter(Boolean);
+            const nameLines = [];
+            let currentLine = '';
+            for (const word of words) {
+              const test = currentLine ? currentLine + ' ' + word : word;
+              if (ctx.measureText(test).width <= nameMaxWidth) {
+                currentLine = test;
+              } else {
+                if (currentLine) nameLines.push(currentLine);
+                currentLine = word;
+              }
+            }
+            if (currentLine) nameLines.push(currentLine);
+            if (nameLines.length === 0) nameLines.push(rawName);
+      
+            // Vertically center the name block around the original single-line Y (275)
+            const nameLineHeight = 28;
+            const nameFirstY = 275 - (nameLines.length - 1) * 14;
+            nameLines.forEach((line, i) => {
+              ctx.fillText(line, W / 2, nameFirstY + i * nameLineHeight);
+            });
+      
+            // Subtitle appears right after the last name line
+            const subtitleY = nameFirstY + (nameLines.length - 1) * nameLineHeight + 22;
+      
+            ctx.fillStyle = '#6b7280';
+            ctx.font = 'bold 13px Inter, Arial, sans-serif';
+            let subtitle = user.category || '';
+            if (user.class) subtitle += ` • ${user.class}`;
+            if (user.sex) subtitle += ` • ${user.sex}`;
+            if (user.role) subtitle += ` • ${user.role}`;
+            ctx.fillText(subtitle, W / 2, subtitleY);
 
       const qrBoxSize = 150;
       const qrBoxX = (W - qrBoxSize) / 2;
